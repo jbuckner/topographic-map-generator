@@ -1,0 +1,9 @@
+cache
+images
+img
+*.png
+*.jpeg
+assets
+*.pyc
+*.hgt
+*.hgt.zip
