@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+# originally from https://trac.openstreetmap.org/browser/subversion/applications/utils/import/srtm2wayinfo/python/srtm.py
+
 # Pylint: Disable name warnings
 # pylint: disable-msg=C0103
 
@@ -16,6 +18,7 @@ import os
 import zipfile
 import array
 import math
+
 
 class NoSuchTileError(Exception):
     """Raised when there is no tile for a region."""
@@ -41,6 +44,7 @@ class WrongTileError(Exception):
         return "SRTM tile for %d, %d does not contain data for %d, %d!" % (
             self.tile_lat, self.tile_lon, self.req_lat, self.req_lon)
 
+
 class InvalidTileError(Exception):
     """Raised when the SRTM tile file contains invalid data."""
     def __init__(self, lat, lon):
@@ -51,23 +55,24 @@ class InvalidTileError(Exception):
     def __str__(self):
         return "SRTM tile for %d, %d is invalid!" % (self.lat, self.lon)
 
+
 class SRTMDownloader:
     """Automatically download SRTM tiles."""
     def __init__(self, server="dds.cr.usgs.gov",
                  directory="/srtm/version2_1/SRTM3/",
                  cachedir="cache",
                  protocol="http"):
-        self.protocol=protocol
+        self.protocol = protocol
         self.server = server
         self.directory = directory
         self.cachedir = cachedir
-	print "SRTMDownloader - server= %s, directory=%s." % \
+        print "SRTMDownloader - server= %s, directory=%s." % \
               (self.server, self.directory)
         if not os.path.exists(cachedir):
             os.mkdir(cachedir)
         self.filelist = {}
         self.filename_regex = re.compile(
-                r"([NS])(\d{2})([EW])(\d{3})\.hgt\.zip")
+            r"([NS])(\d{2})([EW])(\d{3})\.hgt\.zip")
         self.filelist_file = self.cachedir + "/filelist_python"
         self.ftpfile = None
         self.ftp_bytes_transfered = 0
@@ -95,20 +100,20 @@ class SRTMDownloader:
             try:
                 ftp.login()
                 ftp.cwd(self.directory)
-                continents = ftp.nlst()
-                for continent in continents:
-                    print "Downloading file list for", continent
-                    ftp.cwd(self.directory+"/"+continent)
+                regions = ftp.nlst()
+                for region in regions:
+                    print "Downloading file list for", region
+                    ftp.cwd(self.directory + "/" + region)
                     files = ftp.nlst()
                     for filename in files:
                         self.filelist[self.parseFilename(filename)] = (
-                                continent, filename)
+                            region, filename)
             finally:
                 ftp.close()
             # Add meta info
             self.filelist["server"] = self.server
             self.filelist["directory"] = self.directory
-            with open(self.filelist_file , 'wb') as output:
+            with open(self.filelist_file, 'wb') as output:
                 pickle.dump(self.filelist, output)
         else:
             self.createFileListHTTP()
@@ -120,48 +125,45 @@ class SRTMDownloader:
         """
         print "createFileListHTTP"
         conn = httplib.HTTPConnection(self.server)
-        conn.request("GET",self.directory)
+        conn.request("GET", self.directory)
         r1 = conn.getresponse()
-        if r1.status==200:
+        if r1.status == 200:
             print "status200 received ok"
         else:
-            print "oh no = status=%d %s" \
-                  % (r1.status,r1.reason)
+            print "oh no = status=%d %s" % (r1.status, r1.reason)
 
         data = r1.read()
         parser = parseHTMLDirectoryListing()
         parser.feed(data)
-        continents = parser.getDirListing()
-        print continents
+        regions = parser.getDirListing()
+        print regions
 
-        for continent in continents:
-            print "Downloading file list for", continent
-            conn.request("GET","%s/%s" % \
-                         (self.directory,continent))
+        for region in regions:
+            print "Downloading file list for", region
+            if 'jpg' in region:
+                continue
+            conn.request("GET", "%s/%s" % (self.directory, region))
             r1 = conn.getresponse()
-            if r1.status==200:
+            if r1.status == 200:
                 print "status200 received ok"
             else:
-                print "oh no = status=%d %s" \
-                      % (r1.status,r1.reason)
+                print "oh no = status=%d %s" % (r1.status, r1.reason)
             data = r1.read()
             parser = parseHTMLDirectoryListing()
             parser.feed(data)
             files = parser.getDirListing()
 
             for filename in files:
-                self.filelist[self.parseFilename(filename)] = (
-                            continent, filename)
+                self.filelist[self.parseFilename(filename)] = (region,
+                                                               filename)
 
             print self.filelist
         # Add meta info
         self.filelist["server"] = self.server
         self.filelist["directory"] = self.directory
-        with open(self.filelist_file , 'wb') as output:
+        with open(self.filelist_file, 'wb') as output:
             pickle.dump(self.filelist, output)
 
-
-        
     def parseFilename(self, filename):
         """Get lat/lon values from filename."""
         match = self.filename_regex.match(filename)
@@ -182,22 +184,22 @@ class SRTMDownloader:
             SRTM3 object depending on what is available, however currently it
             only returns SRTM3 objects."""
         try:
-            continent, filename = self.filelist[(int(lat), int(lon))]
+            region, filename = self.filelist[(int(lat), int(lon))]
         except KeyError:
             raise NoSuchTileError(lat, lon)
         if not os.path.exists(self.cachedir + "/" + filename):
-            self.downloadTile(continent, filename)
+            self.downloadTile(region, filename)
         # TODO: Currently we create a new tile object each time.
         # Caching is required for improved performance.
         return SRTMTile(self.cachedir + "/" + filename, int(lat), int(lon))
 
-    def downloadTile(self, continent, filename):
+    def downloadTile(self, region, filename):
         """Download a tile from NASA's server and store it in the cache."""
         if self.protocol=="ftp":
             ftp = ftplib.FTP(self.server)
             try:
                 ftp.login()
-                ftp.cwd(self.directory+"/"+continent)
+                ftp.cwd(self.directory+"/"+region)
                 # WARNING: This is not thread safe
                 self.ftpfile = open(self.cachedir + "/" + filename, 'wb')
                 self.ftp_bytes_transfered = 0
@@ -214,7 +216,7 @@ class SRTMDownloader:
             conn = httplib.HTTPConnection(self.server)
             conn.set_debuglevel(0)
             filepath = "%s%s%s" % \
-                         (self.directory,continent,filename)
+                         (self.directory,region,filename)
             print "filepath=%s" % filepath
             conn.request("GET", filepath)
             r1 = conn.getresponse()
@@ -307,7 +309,7 @@ class SRTMTile:
         if value == -32768:
             return None # -32768 is a special value for areas with no data
         return value
-        
+
 
     def getAltitudeFromLatLon(self, lat, lon):
         """Get the altitude of a lat lon pair, using the four neighbouring
@@ -363,7 +365,7 @@ class parseHTMLDirectoryListing(HTMLParser):
             for attr in attrs:
                 if attr[0]=='href':
                     self.currHref = attr[1]
-            
+
 
     def handle_endtag(self, tag):
         #print "Encountered the end of a %s tag" % tag
