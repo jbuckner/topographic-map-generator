@@ -2,6 +2,8 @@
 import os
 import argparse
 
+import datetime
+
 import gpxpy
 import numpy as np
 import matplotlib.cm as cm
@@ -34,11 +36,8 @@ ne_corner = {
 tile_count_lat = abs(sw_corner['lat'] - ne_corner['lat'])
 tile_count_lng = abs(sw_corner['lng'] - ne_corner['lng'])
 
-resolution = 1000  # numer of samples we take of each hgt in each direction
-pixels = resolution * resolution  # for calculating percent complete
-divisor = resolution + 1.0  # for calculating the point to sample from
-
 srtm_format = 1  # 3, 1
+srtm_samples = 1201 if srtm_format == 3 else 3601
 
 dpi = 100
 width = 40  # inches
@@ -48,6 +47,42 @@ output_resolution = {
     'y': height * dpi
 }
 img_directory = "images/srtm%s" % srtm_format  # where to save the images
+
+
+# Bresenham's circle algorithm:
+# http://www.daniweb.com/software-development/python/threads/321181/python-bresenham-circle-arc-algorithm#
+def circle(radius):
+    "Bresenham complete circle algorithm in Python"
+    # init vars
+    switch = 3 - (2 * radius)
+    points = set()
+    # first quarter/octant starts clockwise at 12 o'clock
+    x = 0
+    y = radius
+    while x <= y:
+        # first quarter first octant
+        points.add((x, -y))
+        # first quarter 2nd octant
+        points.add((y, -x))
+        # second quarter 3rd octant
+        points.add((y, x))
+        # second quarter 4.octant
+        points.add((x, y))
+        # third quarter 5.octant
+        points.add((-x, y))
+        # third quarter 6.octant
+        points.add((-y, x))
+        # fourth quarter 7.octant
+        points.add((-y, -x))
+        # fourth quarter 8.octant
+        points.add((-x, -y))
+        if switch < 0:
+            switch = switch + (4 * x) + 6
+        else:
+            switch = switch + (4 * (x - y)) + 10
+            y = y - 1
+        x = x + 1
+    return points
 
 
 # Bresenham's line algorithm (calculates the pixels between 2 points):
@@ -82,7 +117,10 @@ def bresenham_line((x, y), (x2, y2)):
     return coords
 
 
-def add_pixel(array, x, y, value, thickness=4):
+def add_pixel(array, x, y, value, thickness=2):
+    # this just draws a basic pixel and some surrounding points
+    # it has been superceded by the circle drawing
+
     array[x, y] = value
     # left
     array[x - 1, y] = value
@@ -101,26 +139,9 @@ def add_pixel(array, x, y, value, thickness=4):
     # bottom-right
     array[x + 1, y - 1] = value
 
-    # direction = 1
-    #corner = {'x': x, 'y': y}
-    #prev_cor = corner
-    #for i in range(1, thickness):
-    #    array[corner['x'], corner['y']] = value
-#
-    #    corner['x'] += -i
-    #    corner['y'] += -i
-    #    prev_corner = corner
-#
-    #    for x_pixels in range(1, i):
-    #        array[corner['x'] + x_pixels][prev_corner['y'] + corner['y']] = value
-#
-    #    for y_pixels in range(1, i):
-    #        array[corner['x'] + i][prev_corner[] + corner['y']] = value
-#
-    #    print corner
-    ##
-    #    # for x in range(i):
-    #    #     array[x + 1, y] = value
+
+def get_altitude(lat, lng):
+    pass
 
 
 def update_status(percent):
@@ -157,6 +178,10 @@ if __name__ == '__main__':
                         default=False, help='Overlay GPX file')
     parser.add_argument('--color_map', '-c', default="gray",
                         help='Colormap to use, defaults to gray')
+    parser.add_argument('--resolution', '-r', default="1000",
+                        help='Resolution to read SRTM files at')
+    parser.add_argument('--thickness', '-t', default="2",
+                        help='Line thickness')
     parser.add_argument('--bounds', '-b',
                         help='Map boundaries in the form: sw_lat,sw_lngxne_lat'
                         ',ne_lng for instance -b "37.704467,-122.520905x37.83'
@@ -177,6 +202,8 @@ if __name__ == '__main__':
         gpx_file = open(gpx_filename, 'r')
 
         gpx = gpxpy.parse(gpx_file)
+
+    resolution = int(args.resolution)
 
     # calculate boundaries
     if args.bounds:
@@ -209,11 +236,10 @@ if __name__ == '__main__':
     print "SW: %s, %s NE: %s, %s" % (south_lat, west_lng, north_lat,
                                      east_lng)
 
-    lat_margin = 0.000733575539568
-    lng_margin = 0.000732888
+    lat_margin = 0.000833575539568
+    lng_margin = 0.000832888
 
-    print lat_margin, lng_margin
-
+    # add some padding to the view
     sw_corner = {
         'lat': south_lat - lat_margin,
         'lng': west_lng - lng_margin
@@ -223,21 +249,20 @@ if __name__ == '__main__':
         'lng': east_lng + lng_margin
     }
 
-    gps_sw_corner = {
-        'lat': south_lat,
-        'lng': west_lng
-    }
-    gps_ne_corner = {
-        'lat': north_lat,
-        'lng': east_lng
-    }
-
+    # the delta is how far it is from one side to the other of the visible
+    # area
     lng_delta = abs(ne_corner['lng'] - sw_corner['lng'])
     lat_delta = abs(ne_corner['lat'] - sw_corner['lat'])
     aspect_ratio = lng_delta / lat_delta
+
+    print lat_delta, lng_delta, aspect_ratio
+
+    # sample points is how many sample points we're going to take from each
+    # of the lat and lng
     lng_sample_points = int(resolution * aspect_ratio)
     lat_sample_points = int(resolution)
 
+    # the distance in lat and lng between each sample point
     lng_interval = lng_delta / lng_sample_points * 1.0
     lat_interval = lat_delta / lat_sample_points * 1.0
 
@@ -310,6 +335,8 @@ if __name__ == '__main__':
     else:
         outfile = np.load(cache_file)
 
+    prev_alt = None
+
     if args.overlay_gps:
         prev_pixel = None
         print "overlaying GPS"
@@ -318,10 +345,22 @@ if __name__ == '__main__':
                 for point in segment.points:
                     p_lat, p_lng = point.latitude, point.longitude
 
+                    tile_lat = int(math.floor(p_lat))
+                    tile_lng = int(math.floor(p_lng))
+                    if not tile or tile.lat != tile_lat or tile.lon != tile_lng:
+                        tile = downloader.getTile(tile_lat, tile_lng)
+                    alt = tile.getAltitudeFromLatLon(p_lat, p_lng)
+
+                    if not alt:
+                        alt = prev_alt
+                    else:
+                        prev_alt = alt
+
                     # we need to get the percentage of the map where the
                     # point is and convert it to number of pixels
                     lat_pt = abs(p_lat - sw_corner['lat'])
                     lng_pt = abs(ne_corner['lng'] - p_lng)
+
                     if lat_pt < lat_delta and lng_pt < lng_delta:
                         lat_pct = lat_pt / lat_delta
                         lng_pct = lng_pt / lng_delta
@@ -330,11 +369,6 @@ if __name__ == '__main__':
                         pixel_lng = int(math.floor(lng_pct *
                                         lng_sample_points))
 
-                        add_pixel(outfile, lat_sample_points - pixel_lat +
-                                  (lat_margin / 2), lng_sample_points -
-                                  pixel_lng + (lng_margin / 2), peak["alt"] +
-                                  50)
-
                         # draw a line between the pixels
                         if prev_pixel:
                             coords = bresenham_line(
@@ -342,10 +376,21 @@ if __name__ == '__main__':
                                 (prev_pixel['lat'], prev_pixel['lng']))
                             for pixel in coords:
                                 x, y = pixel
-                                add_pixel(outfile, lat_sample_points - x +
-                                          (lat_margin / 2), lng_sample_points -
-                                          y + (lng_margin / 2), peak["alt"] +
-                                          50)
+
+                                pixel_x = lat_sample_points - x + (
+                                    lat_margin / 2)
+                                pixel_y = lng_sample_points - y + (
+                                    lng_margin / 2)
+
+                                # draw a circle at every point
+                                circ = circle(int(args.thickness))
+
+                                for point in circ:
+                                    x, y = point
+                                    outfile[pixel_x + x, pixel_y + y] = alt + 100
+
+                                # add_pixel(outfile, pixel_x, pixel_y, alt +
+                                #           50)
                         prev_pixel = {'lat': pixel_lat, 'lng': pixel_lng}
 
     vmin = None
@@ -362,7 +407,8 @@ if __name__ == '__main__':
     colormap = cm.get_cmap(args.color_map)
     ax.imshow(outfile, aspect='normal', interpolation='bilinear',
               cmap=colormap, alpha=1.0)
-    filename = "%s,%s_%s,%s_%s_%s_%s.png" % (
+    filename = "%s-%s,%s_%s,%s_%s_%s_%s.png" % (
+        datetime.datetime.strftime(datetime.datetime.now(), "%y%m%d%H%M%S"),
         sw_corner["lat"], sw_corner["lng"], ne_corner["lat"], ne_corner["lng"],
         resolution, "gps" if args.overlay_gps else "nogps", colormap.name)
     fig.savefig("images/merged/%s" % filename)
