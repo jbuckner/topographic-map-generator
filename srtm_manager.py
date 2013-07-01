@@ -45,9 +45,10 @@ class Region:
         self.metadata_filepath = None
         self.outfile = None
         self.distance_ratio = None  # the lng/lat distance ratio of the region
+        self.no_cache = no_cache
 
         self._set_cache_filenames(base_cache_dir)
-        if no_cache:
+        if self.no_cache:
             self.parse_region()
         else:
             self._load_cache()
@@ -141,6 +142,7 @@ class Region:
         self.distance_ratio = lng_distance / lat_distance
 
     def parse_region(self):
+        print "parsing region"
         self.lat_delta = abs(self.north_lat - self.south_lat)
         self.lng_delta = abs(self.east_lng - self.west_lng)
         self.aspect_ratio = self.lat_delta / self.lng_delta
@@ -178,20 +180,28 @@ class Region:
                         self.peak["lat"] = sample_lat
                         self.peak["lng"] = sample_lng
                     self.outfile[self.lat_sample_points - y][x] = alt
-
         self._save_cache()
 
     def contour(self, contour_delta=50):
-        alt_range = self.peak["alt"] - self.valley["alt"]
-        steps = math.ceil(alt_range / contour_delta)
-        grey_delta = alt_range / steps
+        print "contouring"
+        contoured_data_filepath = os.path.join(
+            self.cache_dir, 'contour-%s.npy' % contour_delta)
 
-        for (x, y), value in np.ndenumerate(self.outfile):
-            countour_interval = math.floor(value / contour_delta)
-            new_shade = int(math.floor(countour_interval * grey_delta))
-            self.outfile[x][y] = new_shade
+        if self.no_cache or not os.path.exists(contoured_data_filepath):
+            alt_range = self.peak["alt"] - self.valley["alt"]
+            steps = math.ceil(alt_range / contour_delta)
+            grey_delta = alt_range / steps
+
+            for (x, y), value in np.ndenumerate(self.outfile):
+                countour_interval = math.floor(value / contour_delta)
+                new_shade = int(math.floor(countour_interval * grey_delta))
+                self.outfile[x][y] = new_shade
+            np.save(contoured_data_filepath, self.outfile)
+        else:
+            self.outfile = np.load(contoured_data_filepath)
 
     def overlay_gps(self, gpx, thickness=2):
+        print "overlaying gps"
         srtm = SRTMManager()
 
         prev_pixel = None
@@ -246,6 +256,6 @@ class Region:
                                         circ_x = self.lng_sample_points - 1
                                     if circ_y >= self.lat_sample_points:
                                         circ_y = self.lat_sample_points - 1
-                                    self.outfile[circ_y, circ_x] = alt + 100
+                                    self.outfile[circ_y, circ_x] = alt + 20
 
                         prev_pixel = {'lat': pixel_lat, 'lng': pixel_lng}
