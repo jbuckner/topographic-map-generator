@@ -44,7 +44,7 @@ class Region:
         self.parsed_data_filepath = None
         self.metadata_filepath = None
         self.outfile = None
-        self.distance_ratio = None  # the lng/lat distance ratio of the region
+        self.distance_ratio = 1.0  # the lng/lat distance ratio of the region
         self.no_cache = no_cache
 
         self._set_cache_filenames(base_cache_dir)
