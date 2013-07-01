@@ -116,27 +116,23 @@ def overlay_gps(region, gpx, srtm_format=1):
                         for pixel in coords:
                             x, y = pixel
 
-                            pixel_x = region.lat_sample_points - x  # + (
+                            pixel_y = region.lat_sample_points - x  # + (
                                 #lat_margin / 2)
-                            pixel_y = region.lng_sample_points - y  # + (
+                            pixel_x = region.lng_sample_points - y  # + (
                                 #lng_margin / 2)
 
                             # draw a circle at every point
                             circ = circle(int(4))
 
-                            # print region.lng_sample_points, region.lat_sample_points
-
                             for point in circ:
                                 x, y = point
                                 circle_x = pixel_x + x
                                 circle_y = pixel_y + y
-                                #print circle_x, circle_y
                                 if circle_x >= region.lng_sample_points:
                                     circle_x = region.lng_sample_points - 1
                                 if circle_y >= region.lat_sample_points:
                                     circle_y = region.lat_sample_points - 1
-                                #print circle_x, circle_y
-                                gpx_overlay[circle_x, circle_y] = alt + 100
+                                gpx_overlay[circle_y, circle_x] = alt + 100
 
                     prev_pixel = {'lat': pixel_lat, 'lng': pixel_lng}
 

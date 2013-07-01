@@ -144,32 +144,40 @@ class Region:
         self.lat_delta = abs(self.north_lat - self.south_lat)
         self.lng_delta = abs(self.east_lng - self.west_lng)
         self.aspect_ratio = self.lat_delta / self.lng_delta
-        self.lng_sample_points = self.resolution
-        self.lat_sample_points = int(self.resolution / self.aspect_ratio)
+
+        if self.aspect_ratio > 1:
+            self.lng_sample_points = self.resolution
+            self.lat_sample_points = int(self.resolution / self.aspect_ratio)
+        else:
+            self.lng_sample_points = int(self.resolution / self.aspect_ratio)
+            self.lat_sample_points = self.resolution
+
         self.lng_interval = self.lng_delta / self.lng_sample_points * 1.0
         self.lat_interval = self.lat_delta / self.lat_sample_points * 1.0
 
         self._calculate_distance_ratio()
 
+        # numpy initizalizes the vertical as the first argument
+        # ie zeros((8, 3)) is 8 tall by 3 wide
         self.outfile = zeros((self.lat_sample_points, self.lng_sample_points))
         srtm = SRTMManager()
 
         for y in range(1, self.lat_sample_points):
             for x in range(1, self.lng_sample_points):
-                sample_point = {"lng": self.west_lng + x * self.lng_interval,
-                                "lat": self.south_lat + y * self.lat_interval}
-                alt = srtm.get_altitude(sample_point["lat"],
-                                        sample_point["lng"])
+                sample_lat = self.south_lat + y * self.lat_interval
+                sample_lng = self.west_lng + x * self.lng_interval
+                alt = srtm.get_altitude(sample_lat, sample_lng)
+                #print x, sample_lng, y, sample_lat, alt
                 if alt:
                     if alt < self.valley["alt"]:
                         self.valley["alt"] = alt
-                        self.valley["lat"] = sample_point["lat"]
-                        self.valley["lng"] = sample_point["lng"]
+                        self.valley["lat"] = sample_lat
+                        self.valley["lng"] = sample_lng
                     if alt > self.peak["alt"]:
                         self.peak["alt"] = alt
-                        self.peak["lat"] = sample_point["lat"]
-                        self.peak["lng"] = sample_point["lng"]
-                    self.outfile[(self.lat_sample_points - y)][x] = alt
+                        self.peak["lat"] = sample_lat
+                        self.peak["lng"] = sample_lng
+                    self.outfile[self.lat_sample_points - y][x] = alt
 
         self._save_cache()
 
