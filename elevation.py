@@ -84,15 +84,13 @@ if __name__ == '__main__':
     region = Region(north_lat, east_lng, south_lat, west_lng,
                     resolution=int(args.resolution), no_cache=args.no_cache)
 
-    outfile = region.outfile
-
     contour_filename_suffix = ""
     if int(args.contour) > 0:
-        outfile = region.contour(int(args.contour))
+        region.outfile = region.contour(int(args.contour))
         contour_filename_suffix = "-contour-%s" % args.contour
 
     if args.overlay_gps:
-        outfile = overlay_gps(region, gpx)
+        region.outfile = overlay_gps(region, gpx)
 
     if region.aspect_ratio < 0:
         height = width / region.aspect_ratio
@@ -110,7 +108,7 @@ if __name__ == '__main__':
 
     colormaps = [m for m in cm.datad if not m.endswith("_r")]
     colormap = cm.get_cmap(args.color_map)
-    ax.imshow(outfile, aspect='normal', interpolation='bilinear',
+    ax.imshow(region.outfile, aspect='normal', interpolation='bilinear',
               cmap=colormap, alpha=1.0)
 
     name_source = ""  # append to filename either the source gpx or the bounds
