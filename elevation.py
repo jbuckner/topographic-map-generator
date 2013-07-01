@@ -11,8 +11,6 @@ from pylab import *
 from srtm_manager import Region
 from gpx_manager import GPXManager
 
-from util import overlay_gps
-
 srtm_format = 1
 
 logger = logging.getLogger(__name__)
@@ -41,6 +39,8 @@ if __name__ == '__main__':
     parser.add_argument('--no_cache', '-n', default=False,
                         action='store_true', help="Don't use cache, always "
                         "reprocess data")
+    parser.add_argument('--thickness', '-t', default=2,
+                        help='Line thickness for GPS Overlay')
 
     args = parser.parse_args()
 
@@ -86,11 +86,11 @@ if __name__ == '__main__':
 
     contour_filename_suffix = ""
     if int(args.contour) > 0:
-        region.outfile = region.contour(int(args.contour))
+        region.contour(int(args.contour))
         contour_filename_suffix = "-contour-%s" % args.contour
 
     if args.overlay_gps:
-        region.outfile = overlay_gps(region, gpx)
+        region.overlay_gps(gpx, thickness=int(args.thickness))
 
     if region.aspect_ratio < 0:
         height = width / region.aspect_ratio

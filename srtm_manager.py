@@ -6,7 +6,7 @@ from pylab import *
 
 from srtm import SRTMDownloader
 
-from util import haversine
+from util import haversine, bresenham_line, circle
 
 
 class SRTMManager:
@@ -182,16 +182,70 @@ class Region:
         self._save_cache()
 
     def contour(self, contour_delta=50):
-        # return a contoured version of the map
-        contoured = self.outfile.copy()
-
         alt_range = self.peak["alt"] - self.valley["alt"]
         steps = math.ceil(alt_range / contour_delta)
         grey_delta = alt_range / steps
 
-        for (x, y), value in np.ndenumerate(contoured):
+        for (x, y), value in np.ndenumerate(self.outfile):
             countour_interval = math.floor(value / contour_delta)
             new_shade = int(math.floor(countour_interval * grey_delta))
-            contoured[x][y] = new_shade
+            self.outfile[x][y] = new_shade
 
-        return contoured
+    def overlay_gps(self, gpx, thickness=2):
+        srtm = SRTMManager()
+
+        prev_pixel = None
+        prev_alt = 0
+
+        for track in gpx.tracks:
+            for segment in track.segments:
+                for point in segment.points:
+                    p_lat, p_lng = point.latitude, point.longitude
+
+                    alt = srtm.get_altitude(p_lat, p_lng)
+
+                    if not alt:
+                        alt = prev_alt
+                    else:
+                        prev_alt = alt
+
+                    # we need to get the percentage of the map where the
+                    # point is and convert it to number of pixels
+                    lat_pt = abs(p_lat - self.south_lat)
+                    lng_pt = abs(self.east_lng - p_lng)
+
+                    if lat_pt < self.lat_delta and lng_pt < self.lng_delta:
+                        lat_pct = lat_pt / self.lat_delta
+                        lng_pct = lng_pt / self.lng_delta
+                        pixel_lat = int(math.floor(lat_pct *
+                                        self.lat_sample_points))
+                        pixel_lng = int(math.floor(lng_pct *
+                                        self.lng_sample_points))
+
+                        # draw a line between the pixels
+                        if prev_pixel:
+                            coords = bresenham_line(
+                                (pixel_lat, pixel_lng),
+                                (prev_pixel['lat'], prev_pixel['lng']))
+                            for pixel in coords:
+                                x, y = pixel
+
+                                pixel_y = self.lat_sample_points - x  # + (
+                                    #lat_margin / 2)
+                                pixel_x = self.lng_sample_points - y  # + (
+                                    #lng_margin / 2)
+
+                                # draw a circle at every point
+                                circ = circle(int(thickness))
+
+                                for point in circ:
+                                    x, y = point
+                                    circ_x = pixel_x + x
+                                    circ_y = pixel_y + y
+                                    if circ_x >= self.lng_sample_points:
+                                        circ_x = self.lng_sample_points - 1
+                                    if circ_y >= self.lat_sample_points:
+                                        circ_y = self.lat_sample_points - 1
+                                    self.outfile[circ_y, circ_x] = alt + 100
+
+                        prev_pixel = {'lat': pixel_lat, 'lng': pixel_lng}

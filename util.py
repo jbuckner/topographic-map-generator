@@ -1,6 +1,3 @@
-import math
-
-from pylab import *
 
 
 # Bresenham's circle algorithm:
@@ -71,79 +68,6 @@ def bresenham_line((x, y), (x2, y2)):
         d = d + (2 * dy)
     coords.append((x2, y2))
     return coords
-
-
-def overlay_gps(region, gpx, srtm_format=1):
-    from srtm_manager import SRTMManager
-
-    s = SRTMManager(srtm_format)
-
-    gpx_overlay = region.outfile.copy()
-
-    prev_pixel = None
-    prev_alt = 0
-
-    for track in gpx.tracks:
-        for segment in track.segments:
-            for point in segment.points:
-                p_lat, p_lng = point.latitude, point.longitude
-
-                alt = s.get_altitude(p_lat, p_lng)
-
-                if not alt:
-                    alt = prev_alt
-                else:
-                    prev_alt = alt
-
-                # we need to get the percentage of the map where the
-                # point is and convert it to number of pixels
-                lat_pt = abs(p_lat - region.south_lat)
-                lng_pt = abs(region.east_lng - p_lng)
-
-                if lat_pt < region.lat_delta and lng_pt < region.lng_delta:
-                    lat_pct = lat_pt / region.lat_delta
-                    lng_pct = lng_pt / region.lng_delta
-                    pixel_lat = int(math.floor(lat_pct *
-                                    region.lat_sample_points))
-                    pixel_lng = int(math.floor(lng_pct *
-                                    region.lng_sample_points))
-
-                    # draw a line between the pixels
-                    if prev_pixel:
-                        coords = bresenham_line(
-                            (pixel_lat, pixel_lng),
-                            (prev_pixel['lat'], prev_pixel['lng']))
-                        for pixel in coords:
-                            x, y = pixel
-
-                            pixel_y = region.lat_sample_points - x  # + (
-                                #lat_margin / 2)
-                            pixel_x = region.lng_sample_points - y  # + (
-                                #lng_margin / 2)
-
-                            # draw a circle at every point
-                            circ = circle(int(4))
-
-                            for point in circ:
-                                x, y = point
-                                circle_x = pixel_x + x
-                                circle_y = pixel_y + y
-                                if circle_x >= region.lng_sample_points:
-                                    circle_x = region.lng_sample_points - 1
-                                if circle_y >= region.lat_sample_points:
-                                    circle_y = region.lat_sample_points - 1
-                                gpx_overlay[circle_y, circle_x] = alt + 100
-
-                    prev_pixel = {'lat': pixel_lat, 'lng': pixel_lng}
-
-    return gpx_overlay
-
-
-# http://stackoverflow.com/a/14034507/1145332
-def get_xy(lat, lng, map_width, map_height):
-    x = ((lng + 180) * (map_width / 360))
-    y = (((lat * -1) + 90) * (map_width / 180))
-    return x, y
 
 
 # http://stackoverflow.com/a/4913653/1145332
