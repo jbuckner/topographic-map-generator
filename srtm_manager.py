@@ -46,6 +46,9 @@ class Region:
         self.outfile = None
         self.distance_ratio = 1.0  # the lng/lat distance ratio of the region
         self.no_cache = no_cache
+        self.midpoint = {"lat": None, "lng": None}
+        self.lat_km = 0
+        self.lng_km = 0
 
         self._set_cache_filenames(base_cache_dir)
         if self.no_cache:
@@ -89,6 +92,9 @@ class Region:
             self.lat_sample_points = metadata["lat_sample_points"]
             self.lng_interval = metadata["lng_interval"]
             self.lat_interval = metadata["lat_interval"]
+            self.midpoint = metadata["midpoint"]
+            self.lat_km = metadata["lat_km"]
+            self.lng_km = metadata["lng_km"]
         else:
             self.parse_region()
 
@@ -113,7 +119,10 @@ class Region:
             "lng_sample_points": self.lng_sample_points,
             "lat_sample_points": self.lat_sample_points,
             "lng_interval": self.lng_interval,
-            "lat_interval": self.lat_interval
+            "lat_interval": self.lat_interval,
+            "midpoint": self.midpoint,
+            "lat_km": self.lat_km,
+            "lng_km": self.lng_km
         }
         f = open(self.metadata_filepath, 'w')
         f.write(json.dumps(metadata))
@@ -141,6 +150,17 @@ class Region:
 
         self.distance_ratio = lng_distance / lat_distance
 
+    def _calculate_area_size(self):
+        self.midpoint = {
+            "lat": (self.north_lat - self.south_lat) / 2,
+            "lng": (self.west_lng - self.east_lng) / 2
+        }
+
+        self.lat_km = haversine(self.midpoint["lng"], self.north_lat,
+                                self.midpoint["lng"], self.south_lat)
+        self.lng_km = haversine(self.west_lng, self.midpoint["lat"],
+                                self.east_lng, self.midpoint["lng"])
+
     def parse_region(self):
         print "parsing region"
         self.lat_delta = abs(self.north_lat - self.south_lat)
@@ -158,6 +178,7 @@ class Region:
         self.lat_interval = self.lat_delta / self.lat_sample_points * 1.0
 
         self._calculate_distance_ratio()
+        self._calculate_area_size()
 
         # numpy initizalizes the vertical as the first argument
         # ie zeros((8, 3)) is 8 tall by 3 wide
