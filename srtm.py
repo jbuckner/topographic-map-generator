@@ -195,17 +195,17 @@ class SRTMDownloader:
 
     def downloadTile(self, region, filename):
         """Download a tile from NASA's server and store it in the cache."""
-        if self.protocol=="ftp":
+        if self.protocol == "ftp":
             ftp = ftplib.FTP(self.server)
             try:
                 ftp.login()
-                ftp.cwd(self.directory+"/"+region)
+                ftp.cwd(self.directory + "/" + region)
                 # WARNING: This is not thread safe
                 self.ftpfile = open(self.cachedir + "/" + filename, 'wb')
                 self.ftp_bytes_transfered = 0
                 print ""
                 try:
-                    ftp.retrbinary("RETR "+filename, self.ftpCallback)
+                    ftp.retrbinary("RETR " + filename, self.ftpCallback)
                 finally:
                     self.ftpfile.close()
                     self.ftpfile = None
@@ -215,12 +215,11 @@ class SRTMDownloader:
             #Use HTTP
             conn = httplib.HTTPConnection(self.server)
             conn.set_debuglevel(0)
-            filepath = "%s%s%s" % \
-                         (self.directory,region,filename)
+            filepath = "%s%s%s" % (self.directory, region, filename)
             print "filepath=%s" % filepath
             conn.request("GET", filepath)
             r1 = conn.getresponse()
-            if r1.status==200:
+            if r1.status == 200:
                 print "status200 received ok"
                 data = r1.read()
                 self.ftpfile = open(self.cachedir + "/" + filename, 'wb')
@@ -228,10 +227,7 @@ class SRTMDownloader:
                 self.ftpfile.close()
                 self.ftpfile = None
             else:
-                print "oh no = status=%d %s" \
-                      % (r1.status,r1.reason)
-
-
+                print "oh no = status=%d %s" % (r1.status, r1.reason)
 
     def ftpCallback(self, data):
         """Called by ftplib when some bytes have been received."""
@@ -254,7 +250,7 @@ class SRTMTile:
         if len(names) != 1:
             raise InvalidTileError(lat, lon)
         data = zipf.read(names[0])
-        self.size = int(math.sqrt(len(data)/2)) # 2 bytes per sample
+        self.size = int(math.sqrt(len(data) / 2))  # 2 bytes per sample
         # Currently only SRTM1/3 is supported
         if self.size not in (1201, 3601):
             raise InvalidTileError(lat, lon)
@@ -267,8 +263,9 @@ class SRTMTile:
 
     @staticmethod
     def _avg(value1, value2, weight):
-        """Returns the weighted average of two values and handles the case where
-            one value is None. If both values are None, None is returned.
+        """
+        Returns the weighted average of two values and handles the case where
+        one value is None. If both values are None, None is returned.
         """
         if value1 is None:
             return value2
@@ -307,9 +304,8 @@ class SRTMTile:
         #print offset
         value = self.data[offset]
         if value == -32768:
-            return None # -32768 is a special value for areas with no data
+            return None  # -32768 is a special value for areas with no data
         return value
-
 
     def getAltitudeFromLatLon(self, lat, lon):
         """Get the altitude of a lat lon pair, using the four neighbouring
@@ -318,9 +314,9 @@ class SRTMTile:
         # print "-----\nFromLatLon", lon, lat
         lat -= self.lat
         lon -= self.lon
-        # print "lon, lat", lon, lat
         if lat < 0.0 or lat >= 1.0 or lon < 0.0 or lon >= 1.0:
-            raise WrongTileError(self.lat, self.lon, self.lat+lat, self.lon+lon)
+            raise WrongTileError(self.lat, self.lon,
+                                 self.lat + lat, self.lon + lon)
         x = lon * (self.size - 1)
         y = lat * (self.size - 1)
         # print "x,y", x, y
@@ -330,16 +326,115 @@ class SRTMTile:
         y_frac = y - int(y)
         # print "frac", x_int, x_frac, y_int, y_frac
         value00 = self.getPixelValue(x_int, y_int)
-        value10 = self.getPixelValue(x_int+1, y_int)
-        value01 = self.getPixelValue(x_int, y_int+1)
-        value11 = self.getPixelValue(x_int+1, y_int+1)
+        value10 = self.getPixelValue(x_int + 1, y_int)
+        value01 = self.getPixelValue(x_int, y_int + 1)
+        value11 = self.getPixelValue(x_int + 1, y_int + 1)
         value1 = self._avg(value00, value10, x_frac)
         value2 = self._avg(value01, value11, x_frac)
-        value  = self._avg(value1,  value2, y_frac)
+        value = self._avg(value1, value2, y_frac)
         # print "%4d %4d | %4d\n%4d %4d | %4d\n-------------\n%4d" % (
         #        value00, value10, value1, value01, value11, value2, value)
         return value
 
+    def interpolate(self, x, y, dist=2):
+        """Retun a pixel value as a weighted average of the surrounding pixels.
+        This is brute force right now. Need to algorithm this shit.
+        dist is the distance from the target pixel for the average to be
+        calculated
+
+        tl2      t2      tr2
+            tl1  t1  tr1
+        l2  l1   **  r1  r2
+            bl1  b1  br1
+        bl2      b2      br2
+
+        5 5 5 5 5
+        5 6 6 6 5
+        4 5 * 5 4
+        4 4 3 4 3
+        3 4 4 4 4
+        """
+
+        # bottom row
+        bl1 = self.getPixelValue(x - 1, y - 1)
+        bl2 = self.getPixelValue(x - 2, y - 2)
+        b1 = self.getPixelValue(x, y - 1)
+        b2 = self.getPixelValue(x, y - 2)
+        br1 = self.getPixelValue(x + 1, y - 1)
+        br2 = self.getPixelValue(x + 2, y - 2)
+
+        # left and right
+        l1 = self.getPixelValue(x - 1, y)
+        l2 = self.getPixelValue(x - 2, y)
+        r1 = self.getPixelValue(x + 1, y)
+        r2 = self.getPixelValue(x + 2, y)
+
+        # top row
+        tl1 = self.getPixelValue(x - 1, y + 1)
+        tl2 = self.getPixelValue(x - 2, y + 2)
+        t1 = self.getPixelValue(x, y + 1)
+        t2 = self.getPixelValue(x, y + 2)
+        tr1 = self.getPixelValue(x + 1, y + 1)
+        tr2 = self.getPixelValue(x + 2, y + 2)
+
+        vectors = []
+
+        # we are appending the next guess for the middle number from each angle
+        # so if b1 = 3 and b2 = 4, the next number should be lower, so we have
+        # b1 - b2 = -1
+        # b1 + (b1 - b2) = 2 (this is the same as b1 * 2 - b2)
+        # we append the 2
+        # once we have a recommendation from every angle, we just average that
+        if bl1 is not None and bl2 is not None:
+            vectors.append(bl1 * 2 - bl2)
+        if b1 is not None and b2 is not None:
+            vectors.append(b1 * 2 - b2)
+        if br1 is not None and br2 is not None:
+            vectors.append(br1 * 2 - br2)
+        if l1 is not None and l2 is not None:
+            vectors.append(l1 * 2 - l2)
+        if r1 is not None and r2 is not None:
+            vectors.append(r1 * 2 - r2)
+        if tl1 is not None and tl2 is not None:
+            vectors.append(tl1 * 2 - tl2)
+        if t1 is not None and t2 is not None:
+            vectors.append(t1 * 2 - t2)
+        if tr1 is not None and tr2 is not None:
+            vectors.append(tr1 * 2 - tr2)
+
+        average = float(sum(vectors)) / float(len(vectors))
+
+        if average > 32767:
+            average = None
+        if average < -32767:
+            average = None
+
+        if average and (average > 10000 or average < -10000):
+            print bl1, bl2, b1, b2, br1, br2, l1, l2, r1, r2, tl1, tl2, t1, t2, tr1, tr2, int(average)
+
+        return average
+
+    def fill_nulls(self):
+        for x in range(self.size):
+            for y in range(self.size):
+                pixel_value = self.getPixelValue(x, y)
+                if pixel_value is None:
+                    # Same as calcOffset, inlined for performance reasons
+                    offset = x + self.size * (self.size - y - 1)
+
+                    interpolated_value = self.interpolate(x, y)
+
+                    if interpolated_value is not None:
+                        self.data[offset] = int(interpolated_value)
+
+    def save_to_file(self):
+        f = open('N%sW%s.filled.hgt' % (self.lat, self.lon), 'w')
+
+        self.data.byteswap()
+
+        self.data.tofile(f)
+
+        self.data.byteswap()
 
 
 class parseHTMLDirectoryListing(HTMLParser):
@@ -347,39 +442,38 @@ class parseHTMLDirectoryListing(HTMLParser):
     def __init__(self):
         #print "parseHTMLDirectoryListing.__init__"
         HTMLParser.__init__(self)
-        self.title="Undefined"
+        self.title = "Undefined"
         self.isDirListing = False
-        self.dirList=[]
+        self.dirList = []
         self.inTitle = False
         self.inHyperLink = False
-        self.currAttrs=""
-        self.currHref=""
+        self.currAttrs = ""
+        self.currHref = ""
 
     def handle_starttag(self, tag, attrs):
         #print "Encountered the beginning of a %s tag" % tag
-        if tag=="title":
+        if tag == "title":
             self.inTitle = True
         if tag == "a":
             self.inHyperLink = True
-            self.currAttrs=attrs
+            self.currAttrs = attrs
             for attr in attrs:
-                if attr[0]=='href':
+                if attr[0] == 'href':
                     self.currHref = attr[1]
-
 
     def handle_endtag(self, tag):
         #print "Encountered the end of a %s tag" % tag
-        if tag=="title":
+        if tag == "title":
             self.inTitle = False
         if tag == "a":
             # This is to avoid us adding the parent directory to the list.
-            if self.currHref!="":
+            if self.currHref != "":
                 self.dirList.append(self.currHref)
-            self.currAttrs=""
-            self.currHref=""
+            self.currAttrs = ""
+            self.currHref = ""
             self.inHyperLink = False
 
-    def handle_data(self,data):
+    def handle_data(self, data):
         if self.inTitle:
             self.title = data
             print "title=%s" % data
@@ -388,15 +482,20 @@ class parseHTMLDirectoryListing(HTMLParser):
                 self.isDirListing = True
         if self.inHyperLink:
             # We do not include parent directory in listing.
-            if  "Parent Directory" in data:
-                self.currHref=""
+            if "Parent Directory" in data:
+                self.currHref = ""
 
     def getDirListing(self):
         return self.dirList
 
 #DEBUG ONLY
 if __name__ == '__main__':
-    downloader = SRTMDownloader()
+    srtm_format = 3
+    downloader = SRTMDownloader(
+        directory="/srtm/version2_1/SRTM%s/" % srtm_format,
+        cachedir="cache/srtm%s" % srtm_format)
     downloader.loadFileList()
-    tile = downloader.getTile(49, 12)
-    print tile.getAltitudeFromLatLon(49.1234, 12.56789)
+    tile = downloader.getTile(37, -123)
+    tile.fill_nulls()
+    tile.save_to_file()
+    # print tile.getAltitudeFromLatLon(49.1234, 12.56789)

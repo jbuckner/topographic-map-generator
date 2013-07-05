@@ -1,3 +1,4 @@
+import sys
 
 
 # Bresenham's circle algorithm:
@@ -87,3 +88,11 @@ def haversine(lng1, lat1, lng2, lat2):
     c = 2 * asin(sqrt(a))
     km = 6367 * c
     return km
+
+
+def update_status(percent):
+    """ Update status bar
+
+    """
+    sys.stdout.write("\r%3d%%" % percent)
+    sys.stdout.flush()
