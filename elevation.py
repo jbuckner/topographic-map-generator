@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import logging
 import argparse
-import gpxpy
 
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
@@ -41,6 +40,10 @@ if __name__ == '__main__':
                         "reprocess data")
     parser.add_argument('--thickness', '-t', default=2,
                         help='Line thickness for GPS Overlay')
+    parser.add_argument('--padding_pct', '-p', default=20,
+                        help='Size of padding (percentage)')
+    parser.add_argument('--median_filter', '-m', default="-1",
+                        help='Amount of filtering. Disabled by default.')
 
     args = parser.parse_args()
 
@@ -58,13 +61,9 @@ if __name__ == '__main__':
                      'gps.')
 
     if args.gpx_filename:
-        gpx_filename = args.gpx_filename
-        gpx_file = open(gpx_filename, 'r')
-        gpx = gpxpy.parse(gpx_file)
+        gpx = GPXManager(args.gpx_filename)
 
-        g = GPXManager(gpx)
-
-        bounds = g.get_boundaries()
+        bounds = gpx.get_boundaries()
 
         north_lat = bounds['ne']['lat']
         south_lat = bounds['sw']['lat']
@@ -82,7 +81,8 @@ if __name__ == '__main__':
             east_lng = float(east_lng)
 
     region = Region(north_lat, east_lng, south_lat, west_lng,
-                    resolution=int(args.resolution), no_cache=args.no_cache)
+                    resolution=int(args.resolution), no_cache=args.no_cache,
+                    padding_pct=float(args.padding_pct))
 
     contour_filename_suffix = ""
     if int(args.contour) > 0:
@@ -98,6 +98,12 @@ if __name__ == '__main__':
         height = width * region.aspect_ratio
 
     height = height / region.distance_ratio  # correct for lng distance diff
+
+    medfilt_filename_suffix = ""
+    if args.median_filter != '-1':
+        print "median filtering"
+        region.median_filter(kernel_size=int(args.median_filter))
+        medfilt_filename_suffix = "-medfilt_%s" % args.median_filter
 
     fig = plt.figure(frameon=False)
     fig.set_size_inches(width, height)
@@ -119,9 +125,9 @@ if __name__ == '__main__':
             str(south_lat)[0:7], str(west_lng)[0:7],
             str(north_lat)[0:7], str(east_lng)[0:7])
 
-    filename = "%s-%s-%s-%s%s.png" % (
+    filename = "%s-%s-%s-%s%s%s.png" % (
         datetime.datetime.strftime(datetime.datetime.now(),
                                    "%y%m%d%H%M%S"),
         resolution, colormap.name, name_source,
-        contour_filename_suffix)
-    fig.savefig("images/merged/%s" % filename)
+        contour_filename_suffix, medfilt_filename_suffix)
+    fig.savefig("images/%s" % filename)

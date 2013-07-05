@@ -6,7 +6,7 @@ from pylab import *
 
 from srtm import SRTMDownloader
 
-from util import haversine, bresenham_line, circle
+from util import haversine, bresenham_line, circle, update_status
 
 
 class SRTMManager:
@@ -23,7 +23,11 @@ class SRTMManager:
         if (not self.tile or
                 self.tile.lat != tile_lat or
                 self.tile.lon != tile_lng):
+            print "changing tile"
             self.tile = self.downloader.getTile(tile_lat, tile_lng)
+            print "filling nulls"
+            self.tile.fill_nulls()
+            print "done filling nulls"
         alt = self.tile.getAltitudeFromLatLon(lat, lon)
         return alt
 
@@ -31,12 +35,17 @@ class SRTMManager:
 class Region:
     def __init__(self, north_lat, east_lng, south_lat, west_lng,
                  resolution=500, base_cache_dir='cache/parsed_data',
-                 no_cache=False):
+                 no_cache=False, padding_pct=20):
         self.north_lat = north_lat
         self.east_lng = east_lng
         self.south_lat = south_lat
         self.west_lng = west_lng
-        self.aspect_ratio = 1.0
+        self.padding_pct = float(padding_pct)
+
+        self._calculate_aspect_ratio()
+
+        self._add_padding()
+
         self.peak = {"lat": None, "lng": None, "alt": 0}
         self.valley = {"lat": None, "lng": None, "alt": 32767}
         self.resolution = resolution
@@ -95,6 +104,8 @@ class Region:
             self.midpoint = metadata["midpoint"]
             self.lat_km = metadata["lat_km"]
             self.lng_km = metadata["lng_km"]
+            self.padding_pct = metadata["padding_pct"]
+            self.padding = metadata["padding"]
         else:
             self.parse_region()
 
@@ -122,7 +133,9 @@ class Region:
             "lat_interval": self.lat_interval,
             "midpoint": self.midpoint,
             "lat_km": self.lat_km,
-            "lng_km": self.lng_km
+            "lng_km": self.lng_km,
+            "padding_pct": self.padding_pct,
+            "padding": self.padding
         }
         f = open(self.metadata_filepath, 'w')
         f.write(json.dumps(metadata))
@@ -137,7 +150,8 @@ class Region:
         # In case a whole number is passed in, we offset it by 0.0001 so we
         # can get a proper ceil and floor.
         # Yes, someone could pass in 73.0009 and ruin everything, but they are
-        # bad people.
+        # bad people. Okay, maybe they're not bad people, I just don't want to
+        # check for this right now
         north_parallel = math.ceil(self.north_lat + 0.0001)
         south_parallel = math.floor(self.north_lat + 0.0001)
         west_meridian = math.ceil(self.east_lng + 0.0001)
@@ -149,23 +163,45 @@ class Region:
                                  west_meridian, north_parallel)
 
         self.distance_ratio = lng_distance / lat_distance
+        return self.distance_ratio
+
+    def _calculate_aspect_ratio(self):
+        self.lat_delta = abs(self.north_lat - self.south_lat)
+        self.lng_delta = abs(self.east_lng - self.west_lng)
+        self.aspect_ratio = self.lat_delta / self.lng_delta
+        return self.aspect_ratio
 
     def _calculate_area_size(self):
+        half_lat = (self.north_lat - self.south_lat) / 2
+        half_lng = (self.west_lng - self.east_lng) / 2
+
         self.midpoint = {
-            "lat": (self.north_lat - self.south_lat) / 2,
-            "lng": (self.west_lng - self.east_lng) / 2
+            "lat": self.south_lat + half_lat,
+            "lng": self.east_lng + half_lng
         }
 
         self.lat_km = haversine(self.midpoint["lng"], self.north_lat,
                                 self.midpoint["lng"], self.south_lat)
         self.lng_km = haversine(self.west_lng, self.midpoint["lat"],
-                                self.east_lng, self.midpoint["lng"])
+                                self.east_lng, self.midpoint["lat"])
+        return self.lat_km, self.lng_km
+
+    def _add_padding(self):
+        if self.lat_delta < self.lng_delta:
+            self.padding = self.lat_delta * (self.padding_pct / 100.0)
+        else:
+            self.padding = self.lng_delta * (self.padding_pct / 100.0)
+
+        self.north_lat = self.north_lat + (self.padding / 2.0)
+        self.south_lat = self.south_lat - (self.padding / 2.0)
+        self.west_lng = self.west_lng - (self.padding / 2.0)
+        self.east_lng = self.east_lng + (self.padding / 2.0)
+
+        self._calculate_aspect_ratio()
+        return self.padding
 
     def parse_region(self):
-        print "parsing region"
-        self.lat_delta = abs(self.north_lat - self.south_lat)
-        self.lng_delta = abs(self.east_lng - self.west_lng)
-        self.aspect_ratio = self.lat_delta / self.lng_delta
+        print "\nparsing region\n"
 
         if self.aspect_ratio > 1:
             self.lng_sample_points = self.resolution
@@ -185,12 +221,14 @@ class Region:
         self.outfile = zeros((self.lat_sample_points, self.lng_sample_points))
         srtm = SRTMManager()
 
+        c = 0  # just a counter to track completion
+        total_samples = self.lng_sample_points * self.lat_sample_points
+
         for y in range(1, self.lat_sample_points):
             for x in range(1, self.lng_sample_points):
                 sample_lat = self.south_lat + y * self.lat_interval
                 sample_lng = self.west_lng + x * self.lng_interval
                 alt = srtm.get_altitude(sample_lat, sample_lng)
-                #print x, sample_lng, y, sample_lat, alt
                 if alt:
                     if alt < self.valley["alt"]:
                         self.valley["alt"] = alt
@@ -201,10 +239,14 @@ class Region:
                         self.peak["lat"] = sample_lat
                         self.peak["lng"] = sample_lng
                     self.outfile[self.lat_sample_points - y][x] = alt
+                c += 1.0
+                if (c % 1000) == 0:
+                    percent_complete = (c / total_samples) * 100.0
+                    update_status(percent_complete)
         self._save_cache()
 
     def contour(self, contour_delta=50):
-        print "contouring"
+        print "\ncontouring\n"
         contoured_data_filepath = os.path.join(
             self.cache_dir, 'contour-%s.npy' % contour_delta)
 
@@ -221,8 +263,13 @@ class Region:
         else:
             self.outfile = np.load(contoured_data_filepath)
 
+    def median_filter(self, kernel_size=3):
+        from scipy import signal
+
+        self.outfile = signal.medfilt2d(self.outfile, kernel_size=kernel_size)
+
     def overlay_gps(self, gpx, thickness=2):
-        print "overlaying gps"
+        print "\noverlaying gps\n"
         srtm = SRTMManager()
 
         prev_pixel = None
@@ -261,10 +308,8 @@ class Region:
                             for pixel in coords:
                                 x, y = pixel
 
-                                pixel_y = self.lat_sample_points - x  # + (
-                                    #lat_margin / 2)
-                                pixel_x = self.lng_sample_points - y  # + (
-                                    #lng_margin / 2)
+                                pixel_y = self.lat_sample_points - x
+                                pixel_x = self.lng_sample_points - y
 
                                 # draw a circle at every point
                                 circ = circle(int(thickness))
