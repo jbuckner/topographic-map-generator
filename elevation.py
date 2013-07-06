@@ -21,6 +21,9 @@ if __name__ == '__main__':
                         help='GPX file for processing')
     parser.add_argument('--overlay_gps', '-g', action='store_true',
                         default=False, help='Overlay GPX file')
+    parser.add_argument('--overlay_delta', '-o', default=50,
+                        help='Height above map to place the GPS track '
+                        '(in meters). Default = 20')
     parser.add_argument('--resolution', '-r', default="500",
                         help='Resolution to read SRTM files at')
     parser.add_argument('--dpi', '-d', default="72",
@@ -61,9 +64,9 @@ if __name__ == '__main__':
                      'gps.')
 
     if args.gpx_filename:
-        gpx = GPXManager(args.gpx_filename)
+        gpx_manager = GPXManager(args.gpx_filename)
 
-        bounds = gpx.get_boundaries()
+        bounds = gpx_manager.get_boundaries()
 
         north_lat = bounds['ne']['lat']
         south_lat = bounds['sw']['lat']
@@ -90,7 +93,8 @@ if __name__ == '__main__':
         contour_filename_suffix = "-contour-%s" % args.contour
 
     if args.overlay_gps:
-        region.overlay_gps(gpx, thickness=int(args.thickness))
+        region.overlay_gps(gpx_manager.gpx, thickness=int(args.thickness),
+                           elevation_delta=args.overlay_delta)
 
     if region.aspect_ratio < 0:
         height = width / region.aspect_ratio
@@ -119,7 +123,7 @@ if __name__ == '__main__':
 
     name_source = ""  # append to filename either the source gpx or the bounds
     if args.gpx_filename:
-        name_source = gpx_filename.split('/')[-1]
+        name_source = args.gpx_filename.split('/')[-1]
     else:
         name_source = "%s,%sx%s,%s" % (
             str(south_lat)[0:7], str(west_lng)[0:7],
