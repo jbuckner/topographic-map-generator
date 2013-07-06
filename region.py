@@ -4,46 +4,9 @@ import json
 
 from pylab import *
 
-from srtm import SRTMDownloader
+from srtm import SRTMManager
 
 from util import haversine, bresenham_line, circle, update_status
-
-
-class SRTMManager:
-    def __init__(self, srtm_format=1):
-        self.tiles = {}
-        self.downloader = SRTMDownloader(
-            directory="/srtm/version2_1/SRTM%s/" % srtm_format,
-            cachedir="cache/srtm%s" % srtm_format)
-        self.downloader.loadFileList()
-
-    def get_tile(self, lat, lon):
-        tile_lat = int(math.floor(lat))
-        tile_lon = int(math.floor(lon))
-
-        lat_str = str(tile_lat)
-        lon_str = str(tile_lon)
-
-        # print lat_str, lon_str, self.tiles, lat_str in self.tiles
-
-        if lat_str in self.tiles:
-            if str(lon_str) in self.tiles[lat_str]:
-                return self.tiles[lat_str][lon_str]
-        else:
-            self.tiles[lat_str] = {}
-
-        print "cache miss"
-        tile = self.downloader.getTile(tile_lat, tile_lon)
-        self.tiles[lat_str][lon_str] = tile
-
-        print self.tiles
-
-        return tile
-
-    def get_altitude(self, lat, lon):
-        tile = self.get_tile(lat, lon)
-        alt = tile.getAltitudeFromLatLon(lat, lon)
-        return alt
 
 
 class Region:
@@ -58,7 +21,7 @@ class Region:
 
         self._calculate_aspect_ratio()
 
-        self._add_padding()
+        self._add_coordinate_padding()
 
         self.peak = {"lat": None, "lng": None, "alt": 0}
         self.valley = {"lat": None, "lng": None, "alt": 32767}
@@ -200,7 +163,21 @@ class Region:
                                 self.east_lng, self.midpoint["lat"])
         return self.lat_km, self.lng_km
 
-    def _add_padding(self):
+    def _add_coordinate_padding(self):
+        if self.lat_delta < self.lng_delta:
+            self.padding = self.lat_delta * (self.padding_pct / 100.0)
+        else:
+            self.padding = self.lng_delta * (self.padding_pct / 100.0)
+
+        self.north_lat = self.north_lat + (self.padding / 2.0)
+        self.south_lat = self.south_lat - (self.padding / 2.0)
+        self.west_lng = self.west_lng - (self.padding / 2.0)
+        self.east_lng = self.east_lng + (self.padding / 2.0)
+
+        self._calculate_aspect_ratio()
+        return self.padding
+
+    def crop_outfile(self):
         if self.lat_delta < self.lng_delta:
             self.padding = self.lat_delta * (self.padding_pct / 100.0)
         else:

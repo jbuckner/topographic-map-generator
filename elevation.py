@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 from pylab import *
 
-from srtm_manager import Region
+from region import Region
 from gpx_manager import GPXManager
 
 srtm_format = 1

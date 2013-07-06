@@ -23,7 +23,6 @@ import math
 class NoSuchTileError(Exception):
     """Raised when there is no tile for a region."""
     def __init__(self, lat, lon):
-        Exception.__init__()
         self.lat = lat
         self.lon = lon
 
@@ -34,7 +33,6 @@ class NoSuchTileError(Exception):
 class WrongTileError(Exception):
     """Raised when the value of a pixel outside the tile area is requested."""
     def __init__(self, tile_lat, tile_lon, req_lat, req_lon):
-        Exception.__init__()
         self.tile_lat = tile_lat
         self.tile_lon = tile_lon
         self.req_lat = req_lat
@@ -48,7 +46,6 @@ class WrongTileError(Exception):
 class InvalidTileError(Exception):
     """Raised when the SRTM tile file contains invalid data."""
     def __init__(self, lat, lon):
-        Exception.__init__()
         self.lat = lat
         self.lon = lon
 
@@ -56,26 +53,37 @@ class InvalidTileError(Exception):
         return "SRTM tile for %d, %d is invalid!" % (self.lat, self.lon)
 
 
-class SRTMDownloader:
+class SRTMManager:
     """Automatically download SRTM tiles."""
     def __init__(self, server="dds.cr.usgs.gov",
-                 directory="/srtm/version2_1/SRTM3/",
-                 cachedir="cache",
-                 protocol="http"):
+                 cachedir="cache/srtm",
+                 protocol="http",
+                 srtm_format=1):
+        self.tile_cache = {}
+
         self.protocol = protocol
         self.server = server
-        self.directory = directory
-        self.cachedir = cachedir
-        print "SRTMDownloader - server= %s, directory=%s." % \
-              (self.server, self.directory)
+
+        # directory on remote server to check for SRTM files
+        self.directory = "/srtm/version2_1/SRTM%s/" % srtm_format
+
+        # local caching directory
+        self.cachedir = cachedir + str(srtm_format)
         if not os.path.exists(cachedir):
             os.mkdir(cachedir)
+
         self.filelist = {}
         self.filename_regex = re.compile(
             r"([NS])(\d{2})([EW])(\d{3})\.hgt\.zip")
-        self.filelist_file = self.cachedir + "/filelist_python"
+        self.filelist_file = os.path.join(self.cachedir, "filelist_python")
+
         self.ftpfile = None
         self.ftp_bytes_transfered = 0
+
+    def get_altitude(self, lat, lon):
+        tile = self.getTile(lat, lon)
+        alt = tile.getAltitudeFromLatLon(lat, lon)
+        return alt
 
     def loadFileList(self):
         """Load a previously created file list or create a new one if none is
@@ -192,9 +200,31 @@ class SRTMDownloader:
         return hgt_filename
 
     def getTile(self, lat, lon):
-        """Get a SRTM tile object. This function can return either an SRTM1 or
-            SRTM3 object depending on what is available, however currently it
-            only returns SRTM3 objects."""
+        """Return a tile, first try the cache.
+        """
+        tile_lat = int(math.floor(lat))
+        tile_lon = int(math.floor(lon))
+
+        lat_str = str(tile_lat)
+        lon_str = str(tile_lon)
+
+        if lat_str in self.tile_cache:
+            if str(lon_str) in self.tile_cache[lat_str]:
+                return self.tile_cache[lat_str][lon_str]
+        else:
+            self.tile_cache[lat_str] = {}
+
+        print "cache miss, fetching %s, %s" % (tile_lat, tile_lon)
+        tile = self.fetchTile(tile_lat, tile_lon)
+        self.tile_cache[lat_str][lon_str] = tile
+
+        return tile
+
+    def fetchTile(self, lat, lon):
+        """Return a Tile by either fetching from disk or downloading.
+        If it is a new download, this will also patch the nulls before
+        returning the tile.
+        """
 
         # first check for a patched SRTM file (patched nulls)
         patched_filename = self.patched_file_name(lat, lon) + '.zip'
@@ -214,14 +244,12 @@ class SRTMDownloader:
             if not os.path.exists(cached_filepath):
                 self.downloadTile(region, filename)
 
-        srtm_tile = SRTMTile(cached_filepath, int(lat), int(lon))
         if srtm_needs_patching:
+            srtm_tile = SRTMTile(cached_filepath, int(lat), int(lon))
             srtm_tile.fill_nulls()
             srtm_tile.save_patched_file(cachedir=self.cachedir)
             cached_filepath = os.path.join(self.cachedir, patched_filename)
 
-        # TODO: Currently we create a new tile object each time.
-        # Caching is required for improved performance.
         return SRTMTile(cached_filepath, int(lat), int(lon))
 
     def downloadTile(self, region, filename):
@@ -501,6 +529,12 @@ class SRTMTile:
         return hgt_filename
 
     def save_patched_file(self, cachedir):
+        try:
+            import zlib
+            compression = zipfile.ZIP_DEFLATED
+        except:
+            compression = zipfile.ZIP_STORED
+
         patched_filepath = os.path.join(cachedir, self.patched_filename)
 
         patched_file = open(patched_filepath, 'w')
@@ -510,8 +544,10 @@ class SRTMTile:
         self.data.byteswap()
 
         zipped_file = zipfile.ZipFile(patched_filepath + ".zip", 'w')
-        zipped_file.write(patched_filepath)
+        zipped_file.write(patched_filepath, compress_type=compression)
         zipped_file.close()
+
+        os.remove(patched_filepath)
 
 
 class parseHTMLDirectoryListing(HTMLParser):
@@ -568,7 +604,7 @@ class parseHTMLDirectoryListing(HTMLParser):
 #DEBUG ONLY
 if __name__ == '__main__':
     srtm_format = 3
-    downloader = SRTMDownloader(
+    downloader = SRTMManager(
         directory="/srtm/version2_1/SRTM%s/" % srtm_format,
         cachedir="cache/srtm%s" % srtm_format)
     downloader.loadFileList()

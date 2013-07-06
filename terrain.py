@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 
 from pylab import *
 
-from srtm import SRTMDownloader
+from srtm import SRTMManager
 
 # SF
 # ne_corner = {
@@ -324,7 +324,7 @@ if __name__ == '__main__':
 
     print total_sample_resolution
 
-    downloader = SRTMDownloader(
+    downloader = SRTMManager(
         directory="/srtm/version2_1/SRTM%s/" % srtm_format,
         cachedir="cache/srtm%s" % srtm_format)
     downloader.loadFileList()
