@@ -88,6 +88,18 @@ class SRTMManager:
         self.ftpfile = None
         self.ftp_bytes_transfered = 0
 
+    @staticmethod
+    def patched_file_name(lat, lon):
+        lat_name = 'N'
+        lon_name = 'W'
+        if lat < 0:
+            lat_name = 'S'
+        if lon > 0:
+            lon_name = 'E'
+        hgt_filename = '%s%s%s%s.patched.hgt' % (lat_name, abs(int(lat)),
+                                                 lon_name, abs(int(lon)))
+        return hgt_filename
+
     def get_altitude(self, lat, lon):
         tile = self.getTile(lat, lon)
         alt = tile.getAltitudeFromLatLon(lat, lon)
@@ -196,18 +208,6 @@ class SRTMManager:
         if match.group(3) == "W":
             lon = -lon
         return lat, lon
-
-    @staticmethod
-    def patched_file_name(lat, lon):
-        lat_name = 'N'
-        lon_name = 'W'
-        if lat < 0:
-            lat_name = 'S'
-        if lon > 0:
-            lon_name = 'E'
-        hgt_filename = '%s%s%s%s.patched.hgt' % (lat_name, abs(int(lat)),
-                                                 lon_name, abs(int(lon)))
-        return hgt_filename
 
     def getTile(self, lat, lon):
         """Return a tile, first try the cache.
