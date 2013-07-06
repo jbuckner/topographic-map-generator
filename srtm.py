@@ -54,11 +54,18 @@ class InvalidTileError(Exception):
 
 
 class SRTMManager:
-    """Automatically download SRTM tiles."""
+    """Manage SRTM Tiles. Handles local caching and patching nulls.
+
+    Sample calls:
+    srtm_manager = SRTMManager()
+
+    srtm_manager.get_altitude(32.2123, -121.3452)
+
+    """
     def __init__(self, server="dds.cr.usgs.gov",
                  cachedir="cache/srtm",
                  protocol="http",
-                 srtm_format=1):
+                 srtm_format=3):
         self.tile_cache = {}
 
         self.protocol = protocol
@@ -69,13 +76,14 @@ class SRTMManager:
 
         # local caching directory
         self.cachedir = cachedir + str(srtm_format)
-        if not os.path.exists(cachedir):
-            os.mkdir(cachedir)
+        if not os.path.exists(self.cachedir):
+            os.mkdir(self.cachedir)
 
         self.filelist = {}
         self.filename_regex = re.compile(
             r"([NS])(\d{2})([EW])(\d{3})\.hgt\.zip")
         self.filelist_file = os.path.join(self.cachedir, "filelist_python")
+        self.loadFileList()
 
         self.ftpfile = None
         self.ftp_bytes_transfered = 0
@@ -88,17 +96,19 @@ class SRTMManager:
     def loadFileList(self):
         """Load a previously created file list or create a new one if none is
             available."""
-        try:
+
+        if os.path.exists(self.filelist_file):
             data = open(self.filelist_file, 'rb')
-        except IOError:
+
+            try:
+                self.filelist = pickle.load(data)
+            except:
+                print "Unknown error loading cached file list. Recreating."
+                self.createFileList()
+        else:
             print "No cached file list. Creating new one!"
             self.createFileList()
             return
-        try:
-            self.filelist = pickle.load(data)
-        except:
-            print "Unknown error loading cached file list. Creating new one!"
-            self.createFileList()
 
     def createFileList(self):
         """SRTM data is split into different directories, get a list of all of
@@ -165,7 +175,7 @@ class SRTMManager:
                 self.filelist[self.parseFilename(filename)] = (region,
                                                                filename)
 
-            print self.filelist
+            # print self.filelist
         # Add meta info
         self.filelist["server"] = self.server
         self.filelist["directory"] = self.directory
@@ -603,12 +613,9 @@ class parseHTMLDirectoryListing(HTMLParser):
 
 #DEBUG ONLY
 if __name__ == '__main__':
-    srtm_format = 3
-    downloader = SRTMManager(
-        directory="/srtm/version2_1/SRTM%s/" % srtm_format,
-        cachedir="cache/srtm%s" % srtm_format)
+    downloader = SRTMManager()
     downloader.loadFileList()
     tile = downloader.getTile(37, -123)
     tile.fill_nulls()
-    tile.save_to_file()
-    # print tile.getAltitudeFromLatLon(49.1234, 12.56789)
+    tile.save_patched_file()
+    print tile.get_altitude(49.1234, 12.56789)
