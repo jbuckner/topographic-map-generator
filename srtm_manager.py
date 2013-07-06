@@ -11,21 +11,38 @@ from util import haversine, bresenham_line, circle, update_status
 
 class SRTMManager:
     def __init__(self, srtm_format=1):
-        self.tile = None
+        self.tiles = {}
         self.downloader = SRTMDownloader(
             directory="/srtm/version2_1/SRTM%s/" % srtm_format,
             cachedir="cache/srtm%s" % srtm_format)
         self.downloader.loadFileList()
 
-    def get_altitude(self, lat, lon):
+    def get_tile(self, lat, lon):
         tile_lat = int(math.floor(lat))
-        tile_lng = int(math.floor(lon))
-        if (not self.tile or
-                self.tile.lat != tile_lat or
-                self.tile.lon != tile_lng):
-            print "changing tile"
-            self.tile = self.downloader.getTile(tile_lat, tile_lng)
-        alt = self.tile.getAltitudeFromLatLon(lat, lon)
+        tile_lon = int(math.floor(lon))
+
+        lat_str = str(tile_lat)
+        lon_str = str(tile_lon)
+
+        # print lat_str, lon_str, self.tiles, lat_str in self.tiles
+
+        if lat_str in self.tiles:
+            if str(lon_str) in self.tiles[lat_str]:
+                return self.tiles[lat_str][lon_str]
+        else:
+            self.tiles[lat_str] = {}
+
+        print "cache miss"
+        tile = self.downloader.getTile(tile_lat, tile_lon)
+        self.tiles[lat_str][lon_str] = tile
+
+        print self.tiles
+
+        return tile
+
+    def get_altitude(self, lat, lon):
+        tile = self.get_tile(lat, lon)
+        alt = tile.getAltitudeFromLatLon(lat, lon)
         return alt
 
 
@@ -265,7 +282,7 @@ class Region:
 
         self.outfile = signal.medfilt2d(self.outfile, kernel_size=kernel_size)
 
-    def overlay_gps(self, gpx, thickness=2):
+    def overlay_gps(self, gpx, thickness=2, elevation_delta=20):
         print "\noverlaying gps\n"
         srtm = SRTMManager()
 
@@ -319,6 +336,7 @@ class Region:
                                         circ_x = self.lng_sample_points - 1
                                     if circ_y >= self.lat_sample_points:
                                         circ_y = self.lat_sample_points - 1
-                                    self.outfile[circ_y, circ_x] = alt + 20
+                                    self.outfile[circ_y, circ_x] = alt + \
+                                        int(elevation_delta)
 
                         prev_pixel = {'lat': pixel_lat, 'lng': pixel_lng}
