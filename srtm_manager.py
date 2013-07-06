@@ -25,9 +25,6 @@ class SRTMManager:
                 self.tile.lon != tile_lng):
             print "changing tile"
             self.tile = self.downloader.getTile(tile_lat, tile_lng)
-            print "filling nulls"
-            self.tile.fill_nulls()
-            print "done filling nulls"
         alt = self.tile.getAltitudeFromLatLon(lat, lon)
         return alt
 

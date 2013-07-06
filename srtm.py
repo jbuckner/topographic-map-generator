@@ -179,19 +179,50 @@ class SRTMDownloader:
             lon = -lon
         return lat, lon
 
+    @staticmethod
+    def patched_file_name(lat, lon):
+        lat_name = 'N'
+        lon_name = 'W'
+        if lat < 0:
+            lat_name = 'S'
+        if lon > 0:
+            lon_name = 'E'
+        hgt_filename = '%s%s%s%s.patched.hgt' % (lat_name, abs(int(lat)),
+                                                 lon_name, abs(int(lon)))
+        return hgt_filename
+
     def getTile(self, lat, lon):
         """Get a SRTM tile object. This function can return either an SRTM1 or
             SRTM3 object depending on what is available, however currently it
             only returns SRTM3 objects."""
-        try:
-            region, filename = self.filelist[(int(lat), int(lon))]
-        except KeyError:
-            raise NoSuchTileError(lat, lon)
-        if not os.path.exists(self.cachedir + "/" + filename):
-            self.downloadTile(region, filename)
+
+        # first check for a patched SRTM file (patched nulls)
+        patched_filename = self.patched_file_name(lat, lon) + '.zip'
+        cached_filepath = os.path.join(self.cachedir, patched_filename)
+
+        srtm_needs_patching = False
+
+        if not os.path.exists(cached_filepath):
+            srtm_needs_patching = True
+            try:
+                region, filename = self.filelist[(int(lat), int(lon))]
+            except KeyError:
+                raise NoSuchTileError(lat, lon)
+
+            cached_filepath = os.path.join(self.cachedir, filename)
+
+            if not os.path.exists(cached_filepath):
+                self.downloadTile(region, filename)
+
+        srtm_tile = SRTMTile(cached_filepath, int(lat), int(lon))
+        if srtm_needs_patching:
+            srtm_tile.fill_nulls()
+            srtm_tile.save_patched_file(cachedir=self.cachedir)
+            cached_filepath = os.path.join(self.cachedir, patched_filename)
+
         # TODO: Currently we create a new tile object each time.
         # Caching is required for improved performance.
-        return SRTMTile(self.cachedir + "/" + filename, int(lat), int(lon))
+        return SRTMTile(cached_filepath, int(lat), int(lon))
 
     def downloadTile(self, region, filename):
         """Download a tile from NASA's server and store it in the cache."""
@@ -307,6 +338,44 @@ class SRTMTile:
             return None  # -32768 is a special value for areas with no data
         return value
 
+    def getPixelAverage(self, x, y):
+        x_int = int(x)
+        y_int = int(y)
+
+        if x_int < 0:
+            x_int = 0
+        if x_int >= self.size:
+            x_int = self.size - 1
+        if y_int < 0:
+            y_int = 0
+        if y_int >= self.size:
+            y_int = self.size - 1
+
+        x_frac = x - x_int
+        y_frac = y - y_int
+
+        # if x_frac > 0 or y_frac > 0:
+        #     print "x, y, frac", x, y, x_int, x_frac, y_int, y_frac
+
+        x_offset = x_int + 1 if x_int + 1 < self.size else x_int
+        y_offset = y_int + 1 if y_int + 1 < self.size else y_int
+
+        value00 = self.getPixelValue(x_int, y_int)
+        value10 = self.getPixelValue(x_offset, y_int)
+        value01 = self.getPixelValue(x_int, y_offset)
+        value11 = self.getPixelValue(x_offset, y_offset)
+
+        value1 = self._avg(value00, value10, x_frac)
+        value2 = self._avg(value01, value11, x_frac)
+        value = self._avg(value1, value2, y_frac)
+
+        # print value
+
+        # print "%4d %4d | %4d\n%4d %4d | %4d\n-------------\n%4d" % (
+        #      value00, value10, value1, value01, value11, value2, value)
+
+        return value
+
     def getAltitudeFromLatLon(self, lat, lon):
         """Get the altitude of a lat lon pair, using the four neighbouring
             pixels for interpolation.
@@ -319,24 +388,10 @@ class SRTMTile:
                                  self.lat + lat, self.lon + lon)
         x = lon * (self.size - 1)
         y = lat * (self.size - 1)
-        # print "x,y", x, y
-        x_int = int(x)
-        x_frac = x - int(x)
-        y_int = int(y)
-        y_frac = y - int(y)
-        # print "frac", x_int, x_frac, y_int, y_frac
-        value00 = self.getPixelValue(x_int, y_int)
-        value10 = self.getPixelValue(x_int + 1, y_int)
-        value01 = self.getPixelValue(x_int, y_int + 1)
-        value11 = self.getPixelValue(x_int + 1, y_int + 1)
-        value1 = self._avg(value00, value10, x_frac)
-        value2 = self._avg(value01, value11, x_frac)
-        value = self._avg(value1, value2, y_frac)
-        # print "%4d %4d | %4d\n%4d %4d | %4d\n-------------\n%4d" % (
-        #        value00, value10, value1, value01, value11, value2, value)
-        return value
 
-    def interpolate(self, x, y, dist=2):
+        return self.getPixelAverage(x, y)
+
+    def interpolate(self, x, y, dist=1):
         """Retun a pixel value as a weighted average of the surrounding pixels.
         This is brute force right now. Need to algorithm this shit.
         dist is the distance from the target pixel for the average to be
@@ -356,26 +411,26 @@ class SRTMTile:
         """
 
         # bottom row
-        bl1 = self.getPixelValue(x - 1, y - 1)
-        bl2 = self.getPixelValue(x - 2, y - 2)
-        b1 = self.getPixelValue(x, y - 1)
-        b2 = self.getPixelValue(x, y - 2)
-        br1 = self.getPixelValue(x + 1, y - 1)
-        br2 = self.getPixelValue(x + 2, y - 2)
+        bl1 = self.getPixelAverage(x - 1, y - 1)
+        bl2 = self.getPixelAverage(x - dist, y - dist)
+        b1 = self.getPixelAverage(x, y - 1)
+        b2 = self.getPixelAverage(x, y - dist)
+        br1 = self.getPixelAverage(x + 1, y - 1)
+        br2 = self.getPixelAverage(x + dist, y - dist)
 
         # left and right
-        l1 = self.getPixelValue(x - 1, y)
-        l2 = self.getPixelValue(x - 2, y)
-        r1 = self.getPixelValue(x + 1, y)
-        r2 = self.getPixelValue(x + 2, y)
+        l1 = self.getPixelAverage(x - 1, y)
+        l2 = self.getPixelAverage(x - dist, y)
+        r1 = self.getPixelAverage(x + 1, y)
+        r2 = self.getPixelAverage(x + dist, y)
 
         # top row
-        tl1 = self.getPixelValue(x - 1, y + 1)
-        tl2 = self.getPixelValue(x - 2, y + 2)
-        t1 = self.getPixelValue(x, y + 1)
-        t2 = self.getPixelValue(x, y + 2)
-        tr1 = self.getPixelValue(x + 1, y + 1)
-        tr2 = self.getPixelValue(x + 2, y + 2)
+        tl1 = self.getPixelAverage(x - 1, y + 1)
+        tl2 = self.getPixelAverage(x - dist, y + dist)
+        t1 = self.getPixelAverage(x, y + 1)
+        t2 = self.getPixelAverage(x, y + dist)
+        tr1 = self.getPixelAverage(x + 1, y + 1)
+        tr2 = self.getPixelAverage(x + dist, y + dist)
 
         vectors = []
 
@@ -384,7 +439,7 @@ class SRTMTile:
         # b1 - b2 = -1
         # b1 + (b1 - b2) = 2 (this is the same as b1 * 2 - b2)
         # we append the 2
-        # once we have a recommendation from every angle, we just average that
+        # once we have an estimate from every angle, we just average that
         if bl1 is not None and bl2 is not None:
             vectors.append(bl1 * 2 - bl2)
         if b1 is not None and b2 is not None:
@@ -402,19 +457,20 @@ class SRTMTile:
         if tr1 is not None and tr2 is not None:
             vectors.append(tr1 * 2 - tr2)
 
-        average = float(sum(vectors)) / float(len(vectors))
+        try:
+            average = float(sum(vectors)) / float(len(vectors))
+        except:
+            average = 0
 
-        if average > 32767:
+        if average > 10000:
             average = None
-        if average < -32767:
+        if average < -1:
             average = None
-
-        if average and (average > 10000 or average < -10000):
-            print bl1, bl2, b1, b2, br1, br2, l1, l2, r1, r2, tl1, tl2, t1, t2, tr1, tr2, int(average)
 
         return average
 
     def fill_nulls(self):
+        print "filling nulls"
         for x in range(self.size):
             for y in range(self.size):
                 pixel_value = self.getPixelValue(x, y)
@@ -426,15 +482,32 @@ class SRTMTile:
 
                     if interpolated_value is not None:
                         self.data[offset] = int(interpolated_value)
+        print "finished filling nulls"
 
-    def save_to_file(self):
-        f = open('N%sW%s.filled.hgt' % (self.lat, self.lon), 'w')
+    @property
+    def patched_filename(self):
+        lat_name = 'N'
+        lon_name = 'W'
+        if self.lat < 0:
+            lat_name = 'S'
+        if self.lon > 0:
+            lon_name = 'E'
+        hgt_filename = '%s%s%s%s.patched.hgt' % (lat_name, abs(int(self.lat)),
+                                                 lon_name, abs(int(self.lon)))
+        return hgt_filename
 
+    def save_patched_file(self, cachedir):
+        patched_filepath = os.path.join(cachedir, self.patched_filename)
+
+        patched_file = open(patched_filepath, 'w')
+        self.data.byteswap()
+        self.data.tofile(patched_file)
+        patched_file.close()
         self.data.byteswap()
 
-        self.data.tofile(f)
-
-        self.data.byteswap()
+        zipped_file = zipfile.ZipFile(patched_filepath + ".zip", 'w')
+        zipped_file.write(patched_filepath)
+        zipped_file.close()
 
 
 class parseHTMLDirectoryListing(HTMLParser):
