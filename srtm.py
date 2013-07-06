@@ -462,6 +462,10 @@ class SRTMTile:
         except:
             average = 0
 
+        # TODO:
+        # I don't like this at all. I'm not sure why it's working, but it's
+        # working. I think I might need to find standard deviation of the
+        # tile and filter out the anomolies from that instead of 10000 and -1
         if average > 10000:
             average = None
         if average < -1:
