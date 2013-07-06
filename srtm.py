@@ -65,8 +65,10 @@ class SRTMManager:
     def __init__(self, server="dds.cr.usgs.gov",
                  cachedir="cache/srtm",
                  protocol="http",
-                 srtm_format=3):
+                 srtm_format=1):
         self.tile_cache = {}
+
+        self.tile_cache['fake'] = 1
 
         self.protocol = protocol
         self.server = server
@@ -230,6 +232,9 @@ class SRTMManager:
 
         return tile
 
+    def makeFakeFile(self, size):
+        pass
+
     def fetchTile(self, lat, lon):
         """Return a Tile by either fetching from disk or downloading.
         If it is a new download, this will also patch the nulls before
@@ -247,7 +252,8 @@ class SRTMManager:
             try:
                 region, filename = self.filelist[(int(lat), int(lon))]
             except KeyError:
-                raise NoSuchTileError(lat, lon)
+                print "FakeFile: %s, %s" % (int(lat), int(lon))
+                return FakeSRTMTile()
 
             cached_filepath = os.path.join(self.cachedir, filename)
 
@@ -363,7 +369,7 @@ class SRTMTile:
         #  (1200/0)     1201*1201-1
         return x + self.size * (self.size - y - 1)
 
-    def getPixelValue(self, x, y):
+    def _getPixelValue(self, x, y):
         """Get the value of a pixel from the data, handling voids in the
             SRTM data."""
         assert x < self.size, "x: %d<%d" % (x, self.size)
@@ -376,7 +382,7 @@ class SRTMTile:
             return None  # -32768 is a special value for areas with no data
         return value
 
-    def getPixelAverage(self, x, y):
+    def _getPixelAverage(self, x, y):
         x_int = int(x)
         y_int = int(y)
 
@@ -398,10 +404,10 @@ class SRTMTile:
         x_offset = x_int + 1 if x_int + 1 < self.size else x_int
         y_offset = y_int + 1 if y_int + 1 < self.size else y_int
 
-        value00 = self.getPixelValue(x_int, y_int)
-        value10 = self.getPixelValue(x_offset, y_int)
-        value01 = self.getPixelValue(x_int, y_offset)
-        value11 = self.getPixelValue(x_offset, y_offset)
+        value00 = self._getPixelValue(x_int, y_int)
+        value10 = self._getPixelValue(x_offset, y_int)
+        value01 = self._getPixelValue(x_int, y_offset)
+        value11 = self._getPixelValue(x_offset, y_offset)
 
         value1 = self._avg(value00, value10, x_frac)
         value2 = self._avg(value01, value11, x_frac)
@@ -427,7 +433,7 @@ class SRTMTile:
         x = lon * (self.size - 1)
         y = lat * (self.size - 1)
 
-        return self.getPixelAverage(x, y)
+        return self._getPixelAverage(x, y)
 
     def interpolate(self, x, y, dist=1):
         """Retun a pixel value as a weighted average of the surrounding pixels.
@@ -449,26 +455,26 @@ class SRTMTile:
         """
 
         # bottom row
-        bl1 = self.getPixelAverage(x - 1, y - 1)
-        bl2 = self.getPixelAverage(x - dist, y - dist)
-        b1 = self.getPixelAverage(x, y - 1)
-        b2 = self.getPixelAverage(x, y - dist)
-        br1 = self.getPixelAverage(x + 1, y - 1)
-        br2 = self.getPixelAverage(x + dist, y - dist)
+        bl1 = self._getPixelAverage(x - 1, y - 1)
+        # bl2 = self._getPixelAverage(x - dist, y - dist)
+        b1 = self._getPixelAverage(x, y - 1)
+        # b2 = self._getPixelAverage(x, y - dist)
+        br1 = self._getPixelAverage(x + 1, y - 1)
+        # br2 = self._getPixelAverage(x + dist, y - dist)
 
         # left and right
-        l1 = self.getPixelAverage(x - 1, y)
-        l2 = self.getPixelAverage(x - dist, y)
-        r1 = self.getPixelAverage(x + 1, y)
-        r2 = self.getPixelAverage(x + dist, y)
+        l1 = self._getPixelAverage(x - 1, y)
+        # l2 = self._getPixelAverage(x - dist, y)
+        r1 = self._getPixelAverage(x + 1, y)
+        # r2 = self._getPixelAverage(x + dist, y)
 
         # top row
-        tl1 = self.getPixelAverage(x - 1, y + 1)
-        tl2 = self.getPixelAverage(x - dist, y + dist)
-        t1 = self.getPixelAverage(x, y + 1)
-        t2 = self.getPixelAverage(x, y + dist)
-        tr1 = self.getPixelAverage(x + 1, y + 1)
-        tr2 = self.getPixelAverage(x + dist, y + dist)
+        tl1 = self._getPixelAverage(x - 1, y + 1)
+        # tl2 = self._getPixelAverage(x - dist, y + dist)
+        t1 = self._getPixelAverage(x, y + 1)
+        # t2 = self._getPixelAverage(x, y + dist)
+        tr1 = self._getPixelAverage(x + 1, y + 1)
+        # tr2 = self._getPixelAverage(x + dist, y + dist)
 
         vectors = []
 
@@ -478,22 +484,22 @@ class SRTMTile:
         # b1 + (b1 - b2) = 2 (this is the same as b1 * 2 - b2)
         # we append the 2
         # once we have an estimate from every angle, we just average that
-        if bl1 is not None and bl2 is not None:
-            vectors.append(bl1 * 2 - bl2)
-        if b1 is not None and b2 is not None:
-            vectors.append(b1 * 2 - b2)
-        if br1 is not None and br2 is not None:
-            vectors.append(br1 * 2 - br2)
-        if l1 is not None and l2 is not None:
-            vectors.append(l1 * 2 - l2)
-        if r1 is not None and r2 is not None:
-            vectors.append(r1 * 2 - r2)
-        if tl1 is not None and tl2 is not None:
-            vectors.append(tl1 * 2 - tl2)
-        if t1 is not None and t2 is not None:
-            vectors.append(t1 * 2 - t2)
-        if tr1 is not None and tr2 is not None:
-            vectors.append(tr1 * 2 - tr2)
+        if bl1 is not None:
+            vectors.append(bl1)
+        if b1 is not None:
+            vectors.append(b1)
+        if br1 is not None:
+            vectors.append(br1)
+        if l1 is not None:
+            vectors.append(l1)
+        if r1 is not None:
+            vectors.append(r1)
+        if tl1 is not None:
+            vectors.append(tl1)
+        if t1 is not None:
+            vectors.append(t1)
+        if tr1 is not None:
+            vectors.append(tr1)
 
         try:
             average = float(sum(vectors)) / float(len(vectors))
@@ -504,7 +510,7 @@ class SRTMTile:
         # I don't like this at all. I'm not sure why it's working, but it's
         # working. I think I might need to find standard deviation of the
         # tile and filter out the anomolies from that instead of 10000 and -1
-        if average > 10000:
+        if average > 200:
             average = None
         if average < -1:
             average = None
@@ -515,7 +521,7 @@ class SRTMTile:
         print "filling nulls"
         for x in range(self.size):
             for y in range(self.size):
-                pixel_value = self.getPixelValue(x, y)
+                pixel_value = self._getPixelValue(x, y)
                 if pixel_value is None:
                     # Same as calcOffset, inlined for performance reasons
                     offset = x + self.size * (self.size - y - 1)
@@ -558,6 +564,14 @@ class SRTMTile:
         zipped_file.close()
 
         os.remove(patched_filepath)
+
+
+class FakeSRTMTile(SRTMTile):
+    def __init__(self):
+        pass
+
+    def getAltitudeFromLatLon(self, lat, lon):
+        return 0
 
 
 class parseHTMLDirectoryListing(HTMLParser):
