@@ -12,7 +12,7 @@ from util import haversine, bresenham_line, circle, update_status
 class Region:
     def __init__(self, north_lat, east_lng, south_lat, west_lng,
                  resolution=500, base_cache_dir='cache/parsed_data',
-                 no_cache=False, padding_pct=20):
+                 no_cache=False, padding_pct=20, srtm_format=1):
         self.north_lat = north_lat
         self.east_lng = east_lng
         self.south_lat = south_lat
@@ -36,6 +36,8 @@ class Region:
         self.lat_km = 0
         self.lng_km = 0
 
+        self.srtm_format = srtm_format
+
         self._set_cache_filenames(base_cache_dir)
         if self.no_cache:
             self.parse_region()
@@ -46,10 +48,11 @@ class Region:
         parsed_data_filename = "parsed_data.npy"
         metadata_filename = "metadata.json"
 
-        self.cache_dir = os.path.join(base_cache_dir, "%s,%s_%s,%s_%s" % (
-            str(self.south_lat)[0:7], str(self.west_lng)[0:7],
-            str(self.north_lat)[0:7], str(self.east_lng)[0:7],
-            self.resolution))
+        self.cache_dir = os.path.join(
+            base_cache_dir, "%s,%s_%s,%s_%s_srtm%s" % (
+                str(self.south_lat)[0:7], str(self.west_lng)[0:7],
+                str(self.north_lat)[0:7], str(self.east_lng)[0:7],
+                self.resolution, str(self.srtm_format)))
         self.parsed_data_filepath = os.path.join(
             self.cache_dir, parsed_data_filename)
         self.metadata_filepath = os.path.join(
@@ -210,7 +213,7 @@ class Region:
         # numpy initizalizes the vertical as the first argument
         # ie zeros((8, 3)) is 8 tall by 3 wide
         self.outfile = zeros((self.lat_sample_points, self.lng_sample_points))
-        srtm = SRTMManager()
+        srtm = SRTMManager(srtm_format=self.srtm_format)
 
         c = 0  # just a counter to track completion
         total_samples = self.lng_sample_points * self.lat_sample_points
@@ -261,7 +264,7 @@ class Region:
 
     def overlay_gps(self, gpx, thickness=2, elevation_delta=20):
         print "\noverlaying gps\n"
-        srtm = SRTMManager()
+        srtm = SRTMManager(srtm_format=self.srtm_format)
 
         prev_pixel = None
         prev_alt = 0

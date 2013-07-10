@@ -10,10 +10,8 @@ from pylab import *
 from region import Region
 from gpx_manager import GPXManager
 
-srtm_format = 1
 
 logger = logging.getLogger(__name__)
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process a GPS file.')
@@ -47,6 +45,8 @@ if __name__ == '__main__':
                         help='Size of padding (percentage)')
     parser.add_argument('--median_filter', '-m', default="-1",
                         help='Amount of filtering. Disabled by default.')
+    parser.add_argument('--srtm_format', '-s', default="1",
+                        help='SRTM format. Default is 1')
 
     args = parser.parse_args()
 
@@ -85,7 +85,8 @@ if __name__ == '__main__':
 
     region = Region(north_lat, east_lng, south_lat, west_lng,
                     resolution=int(args.resolution), no_cache=args.no_cache,
-                    padding_pct=float(args.padding_pct))
+                    padding_pct=float(args.padding_pct),
+                    srtm_format=int(args.srtm_format))
 
     contour_filename_suffix = ""
     if int(args.contour) > 0:
@@ -129,9 +130,10 @@ if __name__ == '__main__':
             str(south_lat)[0:7], str(west_lng)[0:7],
             str(north_lat)[0:7], str(east_lng)[0:7])
 
-    filename = "%s-%s-%s-%s%s%s.png" % (
+    filename = "%s-%s-%s-%s%s%s_srtm%s.png" % (
         datetime.datetime.strftime(datetime.datetime.now(),
                                    "%y%m%d%H%M%S"),
         resolution, colormap.name, name_source,
-        contour_filename_suffix, medfilt_filename_suffix)
+        contour_filename_suffix, medfilt_filename_suffix,
+        str(args.srtm_format))
     fig.savefig("images/%s" % filename)
