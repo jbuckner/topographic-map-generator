@@ -180,23 +180,10 @@ class Region:
         self._calculate_aspect_ratio()
         return self.padding
 
-    def crop_outfile(self):
-        if self.lat_delta < self.lng_delta:
-            self.padding = self.lat_delta * (self.padding_pct / 100.0)
-        else:
-            self.padding = self.lng_delta * (self.padding_pct / 100.0)
-
-        self.north_lat = self.north_lat + (self.padding / 2.0)
-        self.south_lat = self.south_lat - (self.padding / 2.0)
-        self.west_lng = self.west_lng - (self.padding / 2.0)
-        self.east_lng = self.east_lng + (self.padding / 2.0)
-
-        self._calculate_aspect_ratio()
-        return self.padding
-
     def parse_region(self):
         print "\nparsing region\n"
 
+        # an aspect ratio greater than 1 means it's wider than it is tall
         if self.aspect_ratio > 1:
             self.lng_sample_points = self.resolution
             self.lat_sample_points = int(self.resolution / self.aspect_ratio)
