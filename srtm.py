@@ -98,8 +98,8 @@ class SRTMManager:
             lat_name = 'S'
         if lon > 0:
             lon_name = 'E'
-        hgt_filename = '%s%s%s%s.patched.hgt' % (lat_name, abs(int(lat)),
-                                                 lon_name, abs(int(lon)))
+        hgt_filename = '%s%s%s%s_fill.hgt' % (lat_name, abs(int(lat)),
+                                              lon_name, abs(int(lon)))
         return hgt_filename
 
     def get_altitude(self, lat, lon):
@@ -540,8 +540,8 @@ class SRTMTile:
             lat_name = 'S'
         if self.lon > 0:
             lon_name = 'E'
-        hgt_filename = '%s%s%s%s.patched.hgt' % (lat_name, abs(int(self.lat)),
-                                                 lon_name, abs(int(self.lon)))
+        hgt_filename = '%s%s%s%s_fill.hgt' % (lat_name, abs(int(self.lat)),
+                                              lon_name, abs(int(self.lon)))
         return hgt_filename
 
     def save_patched_file(self, cachedir):
