@@ -6,7 +6,7 @@ from pylab import *
 
 from srtm import SRTMManager
 
-from util import haversine, bresenham_line, circle, update_status
+from util import haversine, bresenham_line, filled_circle, update_status
 
 
 class Region:
@@ -268,6 +268,9 @@ class Region:
         prev_pixel = None
         prev_alt = 0
 
+        # get a circle to draw at every point
+        circ = filled_circle(int(thickness))
+
         for track in gpx.tracks:
             for segment in track.segments:
                 for point in segment.points:
@@ -303,9 +306,6 @@ class Region:
 
                                 pixel_y = self.lat_sample_points - x
                                 pixel_x = self.lng_sample_points - y
-
-                                # draw a circle at every point
-                                circ = circle(int(thickness))
 
                                 for point in circ:
                                     x, y = point

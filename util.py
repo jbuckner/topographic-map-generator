@@ -38,6 +38,22 @@ def circle(radius):
     return points
 
 
+# Return all pixels found inside of a circle
+# http://www.blitzbasic.com/Community/post.php?topic=67883&post=758200
+def filled_circle(radius):
+    import math
+
+    coords = set()
+    x = 0
+    y = 0
+
+    for pos_x in range(x - radius, x + radius):
+        for pos_y in range(y - radius, y + radius):
+            if math.sqrt((pos_x - x) ** 2 + (pos_y - y) ** 2) <= radius + 1:
+                coords.add((pos_x, pos_y))
+    return coords
+
+
 # Bresenham's line algorithm (calculates the pixels between 2 points):
 # http://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm
 # Code from:
