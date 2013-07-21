@@ -177,7 +177,7 @@ class Region:
         self.outfile = zeros((self.lat_sample_points, self.lng_sample_points))
 
     def _overlay_map(self):
-        print "\overlaying relief map\n"
+        print "\noverlaying relief map\n"
 
         srtm = SRTMManager(srtm_format=self.srtm_format,
                            patch_mode=self.patch_mode)

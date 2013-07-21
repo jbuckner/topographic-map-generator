@@ -128,7 +128,7 @@ if __name__ == '__main__':
     ax.set_axis_off()
     fig.add_axes(ax)
 
-    log_out = np.log1p(region.outfile)
+    # log_out = np.log1p(region.outfile)
 
     colormaps = [m for m in cm.datad if not m.endswith("_r")]
     colormap = cm.get_cmap(args.color_map)
