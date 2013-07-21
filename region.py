@@ -12,7 +12,8 @@ from util import haversine, bresenham_line, circle, update_status
 class Region:
     def __init__(self, north_lat, east_lng, south_lat, west_lng,
                  resolution=500, base_cache_dir='cache/parsed_data',
-                 no_cache=False, padding_pct=20, srtm_format=1):
+                 no_cache=False, padding_pct=20, srtm_format=1,
+                 patch_mode='auto', auto_parse=True):
         self.north_lat = north_lat
         self.east_lng = east_lng
         self.south_lat = south_lat
@@ -20,7 +21,6 @@ class Region:
         self.padding_pct = float(padding_pct)
 
         self._calculate_aspect_ratio()
-
         self._add_coordinate_padding()
 
         self.peak = {"lat": None, "lng": None, "alt": 0}
@@ -37,57 +37,34 @@ class Region:
         self.lng_km = 0
 
         self.srtm_format = srtm_format
+        self.patch_mode = patch_mode
 
         self._set_cache_filenames(base_cache_dir)
-        if self.no_cache:
-            self.parse_region()
-        else:
-            self._load_cache()
+        self._setup_outfile()
+        if auto_parse:
+            if self.no_cache:
+                self.overlay_map()
+            else:
+                self._load_cache()
 
     def _set_cache_filenames(self, base_cache_dir):
         parsed_data_filename = "parsed_data.npy"
         metadata_filename = "metadata.json"
 
+        patch_mode_filename = ''
+
+        if self.patch_mode not in ['auto', 'reprocess']:
+            patch_mode_filename = '_patch_%s' % str(self.patch_mode)
+
         self.cache_dir = os.path.join(
-            base_cache_dir, "%s,%s_%s,%s_%s_srtm%s" % (
+            base_cache_dir, "%s,%s_%s,%s_%s_srtm%s%s" % (
                 str(self.south_lat)[0:7], str(self.west_lng)[0:7],
                 str(self.north_lat)[0:7], str(self.east_lng)[0:7],
-                self.resolution, str(self.srtm_format)))
+                self.resolution, str(self.srtm_format), patch_mode_filename))
         self.parsed_data_filepath = os.path.join(
             self.cache_dir, parsed_data_filename)
         self.metadata_filepath = os.path.join(
             self.cache_dir, metadata_filename)
-
-    def _load_cache(self):
-        if os.path.exists(self.cache_dir):
-            self.outfile = np.load(self.parsed_data_filepath)
-
-            f = open(self.metadata_filepath, 'r')
-            metadata = json.loads(f.read())
-            f.close()
-
-            self.north_lat = metadata["north_lat"]
-            self.east_lng = metadata["east_lng"]
-            self.south_lat = metadata["south_lat"]
-            self.west_lng = metadata["west_lng"]
-            self.peak = metadata["peak"]
-            self.valley = metadata["valley"]
-            self.resolution = metadata["resolution"]
-            self.aspect_ratio = metadata["aspect_ratio"]
-            self.distance_ratio = metadata["distance_ratio"]
-            self.lat_delta = metadata["lat_delta"]
-            self.lng_delta = metadata["lng_delta"]
-            self.lng_sample_points = metadata["lng_sample_points"]
-            self.lat_sample_points = metadata["lat_sample_points"]
-            self.lng_interval = metadata["lng_interval"]
-            self.lat_interval = metadata["lat_interval"]
-            self.midpoint = metadata["midpoint"]
-            self.lat_km = metadata["lat_km"]
-            self.lng_km = metadata["lng_km"]
-            self.padding_pct = metadata["padding_pct"]
-            self.padding = metadata["padding"]
-        else:
-            self.parse_region()
 
     def _save_cache(self):
         try:
@@ -180,9 +157,7 @@ class Region:
         self._calculate_aspect_ratio()
         return self.padding
 
-    def parse_region(self):
-        print "\nparsing region\n"
-
+    def _setup_outfile(self):
         # an aspect ratio greater than 1 means it's wider than it is tall
         if self.aspect_ratio > 1:
             self.lng_sample_points = self.resolution
@@ -200,7 +175,12 @@ class Region:
         # numpy initizalizes the vertical as the first argument
         # ie zeros((8, 3)) is 8 tall by 3 wide
         self.outfile = zeros((self.lat_sample_points, self.lng_sample_points))
-        srtm = SRTMManager(srtm_format=self.srtm_format)
+
+    def _overlay_map(self):
+        print "\overlaying relief map\n"
+
+        srtm = SRTMManager(srtm_format=self.srtm_format,
+                           patch_mode=self.patch_mode)
 
         c = 0  # just a counter to track completion
         total_samples = self.lng_sample_points * self.lat_sample_points
@@ -249,9 +229,41 @@ class Region:
 
         self.outfile = signal.medfilt2d(self.outfile, kernel_size=kernel_size)
 
+    def overlay_map(self):
+        if os.path.exists(self.cache_dir):
+            self.outfile = np.load(self.parsed_data_filepath)
+
+            f = open(self.metadata_filepath, 'r')
+            metadata = json.loads(f.read())
+            f.close()
+
+            self.north_lat = metadata["north_lat"]
+            self.east_lng = metadata["east_lng"]
+            self.south_lat = metadata["south_lat"]
+            self.west_lng = metadata["west_lng"]
+            self.peak = metadata["peak"]
+            self.valley = metadata["valley"]
+            self.resolution = metadata["resolution"]
+            self.aspect_ratio = metadata["aspect_ratio"]
+            self.distance_ratio = metadata["distance_ratio"]
+            self.lat_delta = metadata["lat_delta"]
+            self.lng_delta = metadata["lng_delta"]
+            self.lng_sample_points = metadata["lng_sample_points"]
+            self.lat_sample_points = metadata["lat_sample_points"]
+            self.lng_interval = metadata["lng_interval"]
+            self.lat_interval = metadata["lat_interval"]
+            self.midpoint = metadata["midpoint"]
+            self.lat_km = metadata["lat_km"]
+            self.lng_km = metadata["lng_km"]
+            self.padding_pct = metadata["padding_pct"]
+            self.padding = metadata["padding"]
+        else:
+            self._overlay_map()
+
     def overlay_gps(self, gpx, thickness=2, elevation_delta=20):
         print "\noverlaying gps\n"
-        srtm = SRTMManager(srtm_format=self.srtm_format)
+        srtm = SRTMManager(srtm_format=self.srtm_format,
+                           patch_mode=self.patch_mode)
 
         prev_pixel = None
         prev_alt = 0

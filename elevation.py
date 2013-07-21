@@ -19,14 +19,16 @@ if __name__ == '__main__':
                         help='GPX file for processing')
     parser.add_argument('--overlay_gps', '-g', action='store_true',
                         default=False, help='Overlay GPX file')
-    parser.add_argument('--overlay_delta', '-o', default=50,
+    parser.add_argument('--only_gps', '-l', action='store_true',
+                        default=False, help='Only GPX file')
+    parser.add_argument('--overlay_delta', '-o', default=20,
                         help='Height above map to place the GPS track '
                         '(in meters). Default = 20')
     parser.add_argument('--resolution', '-r', default="500",
                         help='Resolution to read SRTM files at')
     parser.add_argument('--dpi', '-d', default="72",
                         help='DPI of output file')
-    parser.add_argument('--width', '-w', default="20",
+    parser.add_argument('--width', '-w', default=20,
                         help='Width in inches of output file')
     parser.add_argument('--color_map', '-c', default="gray",
                         help='Colormap to use, defaults to gray')
@@ -45,8 +47,10 @@ if __name__ == '__main__':
                         help='Size of padding (percentage)')
     parser.add_argument('--median_filter', '-m', default="-1",
                         help='Amount of filtering. Disabled by default.')
-    parser.add_argument('--srtm_format', '-s', default="1",
+    parser.add_argument('--srtm_format', '-s', default=1,
                         help='SRTM format. Default is 1')
+    parser.add_argument('--patch_mode', '-u', default="auto",
+                        help='Patch mode for using unpatched files.')
 
     args = parser.parse_args()
 
@@ -58,6 +62,9 @@ if __name__ == '__main__':
 
     if not (args.gpx_filename or args.bounds):
         parser.error('You must specify --bounds and/or --gpx_filename.')
+
+    if args.only_gps:
+        args.overlay_gps = True
 
     if args.overlay_gps and not args.gpx_filename:
         parser.error('You must specify --gpx_filename if you specify overlay_'
@@ -86,7 +93,11 @@ if __name__ == '__main__':
     region = Region(north_lat, east_lng, south_lat, west_lng,
                     resolution=int(args.resolution), no_cache=args.no_cache,
                     padding_pct=float(args.padding_pct),
-                    srtm_format=int(args.srtm_format))
+                    srtm_format=int(args.srtm_format),
+                    patch_mode=args.patch_mode, auto_parse=False)
+
+    if not args.only_gps:
+        region.parse_region()
 
     contour_filename_suffix = ""
     if int(args.contour) > 0:
@@ -116,6 +127,8 @@ if __name__ == '__main__':
     ax = plt.Axes(fig, [0., 0., 1., 1.])
     ax.set_axis_off()
     fig.add_axes(ax)
+
+    log_out = np.log1p(region.outfile)
 
     colormaps = [m for m in cm.datad if not m.endswith("_r")]
     colormap = cm.get_cmap(args.color_map)
