@@ -97,7 +97,7 @@ if __name__ == '__main__':
                     patch_mode=args.patch_mode, auto_parse=False)
 
     if not args.only_gps:
-        region.parse_region()
+        region.overlay_map()
 
     contour_filename_suffix = ""
     if int(args.contour) > 0:
