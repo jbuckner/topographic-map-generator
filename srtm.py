@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# originally from https://trac.openstreetmap.org/browser/subversion/applications/utils/import/srtm2wayinfo/python/srtm.py
+# adapted from https://trac.openstreetmap.org/browser/subversion/applications/utils/import/srtm2wayinfo/python/srtm.py
 
 # Pylint: Disable name warnings
 # pylint: disable-msg=C0103
@@ -62,16 +62,16 @@ class SRTMManager:
     srtm_manager.get_altitude(32.2123, -121.3452)
 
     """
-    def __init__(self, server="dds.cr.usgs.gov",
-                 cachedir="cache/srtm",
-                 protocol="http",
-                 srtm_format=1):
+    def __init__(self, server="dds.cr.usgs.gov", cachedir="cache/srtm",
+                 protocol="http", srtm_format=1, patch_mode="auto"):
         self.tile_cache = {}
 
         self.tile_cache['fake'] = 1
 
         self.protocol = protocol
         self.server = server
+
+        self.patch_mode = patch_mode
 
         # directory on remote server to check for SRTM files
         self.directory = "/srtm/version2_1/SRTM%s/" % srtm_format
@@ -90,21 +90,26 @@ class SRTMManager:
         self.ftpfile = None
         self.ftp_bytes_transfered = 0
 
-    @staticmethod
-    def patched_file_name(lat, lon):
+    def filename_coords(self, lat, lon):
         lat_name = 'N'
         lon_name = 'W'
         if lat < 0:
             lat_name = 'S'
         if lon > 0:
             lon_name = 'E'
-        hgt_filename = '%s%s%s%s_fill.hgt' % (lat_name, abs(int(lat)),
-                                              lon_name, abs(int(lon)))
+        filename_prefix = '%s%s%s%s' % (lat_name, abs(int(lat)),
+                                        lon_name, abs(int(lon)))
+        return filename_prefix
+
+    def patched_file_name(self, lat, lon):
+        hgt_filename = '%s.patched.hgt' % self.filename_coords(lat, lon)
         return hgt_filename
 
     def get_altitude(self, lat, lon):
         tile = self.getTile(lat, lon)
         alt = tile.getAltitudeFromLatLon(lat, lon)
+        # if not alt or alt < 0:
+        #     print alt
         return alt
 
     def loadFileList(self):
@@ -241,30 +246,48 @@ class SRTMManager:
         returning the tile.
         """
 
-        # first check for a patched SRTM file (patched nulls)
-        patched_filename = self.patched_file_name(lat, lon) + '.zip'
-        cached_filepath = os.path.join(self.cachedir, patched_filename)
-
+        patched_filename = None
         srtm_needs_patching = False
 
-        if not os.path.exists(cached_filepath):
+        if self.patch_mode == "auto":
+            # first check for a tile patched by SRTMFill
+            patched_filename = self.filename_coords(lat, lon) + '_fill.zip'
+            cached_filepath = os.path.join(self.cachedir, patched_filename)
+            if not os.path.exists(cached_filepath):
+                # then check for a locally-patched file
+                patched_filename = self.patched_file_name(lat, lon) + '.zip'
+                cached_filepath = os.path.join(self.cachedir, patched_filename)
+                # lastly check for the unpatched file and download if need be
+                if not os.path.exists(cached_filepath):
+                    srtm_needs_patching = True
+
+        # check for a tile filled by the local algorithm
+        if self.patch_mode == "local":
+            patched_filename = self.patched_file_name(lat, lon) + '.zip'
+            cached_filepath = os.path.join(self.cachedir, patched_filename)
+            if not os.path.exists(cached_filepath):
+                srtm_needs_patching = True
+
+        # reprocess srtm file
+        if self.patch_mode == "reprocess":
             srtm_needs_patching = True
+
+        # use the unpatched file
+        if self.patch_mode == "none" or srtm_needs_patching:
             try:
                 region, filename = self.filelist[(int(lat), int(lon))]
             except KeyError:
                 print "FakeFile: %s, %s" % (int(lat), int(lon))
                 return FakeSRTMTile()
-
             cached_filepath = os.path.join(self.cachedir, filename)
-
             if not os.path.exists(cached_filepath):
                 self.downloadTile(region, filename)
 
         if srtm_needs_patching:
             srtm_tile = SRTMTile(cached_filepath, int(lat), int(lon))
             srtm_tile.fill_nulls()
-            srtm_tile.save_patched_file(cachedir=self.cachedir)
-            cached_filepath = os.path.join(self.cachedir, patched_filename)
+            cached_filepath = srtm_tile.save_patched_file(
+                cachedir=self.cachedir)
 
         return SRTMTile(cached_filepath, int(lat), int(lon))
 
@@ -510,19 +533,25 @@ class SRTMTile:
         # I don't like this at all. I'm not sure why it's working, but it's
         # working. I think I might need to find standard deviation of the
         # tile and filter out the anomolies from that instead of 10000 and -1
-        if average > 200:
+        if average > 5000:
             average = None
         if average < -1:
             average = None
 
         return average
 
-    def fill_nulls(self):
+    def fill_nulls(self, srtm3_tile=None):
+        '''
+        You can optionally pass in an srtm3 tile to help patch the srtm1
+        version
+        '''
         print "filling nulls"
         for x in range(self.size):
             for y in range(self.size):
                 pixel_value = self._getPixelValue(x, y)
                 if pixel_value is None:
+                    if srtm3_tile is not None:
+                        pass
                     # Same as calcOffset, inlined for performance reasons
                     offset = x + self.size * (self.size - y - 1)
 
@@ -540,8 +569,8 @@ class SRTMTile:
             lat_name = 'S'
         if self.lon > 0:
             lon_name = 'E'
-        hgt_filename = '%s%s%s%s_fill.hgt' % (lat_name, abs(int(self.lat)),
-                                              lon_name, abs(int(self.lon)))
+        hgt_filename = '%s%s%s%s.patched.hgt' % (lat_name, abs(int(self.lat)),
+                                                 lon_name, abs(int(self.lon)))
         return hgt_filename
 
     def save_patched_file(self, cachedir):
@@ -559,14 +588,21 @@ class SRTMTile:
         patched_file.close()
         self.data.byteswap()
 
-        zipped_file = zipfile.ZipFile(patched_filepath + ".zip", 'w')
+        zipped_filepath = patched_filepath + ".zip"
+        zipped_file = zipfile.ZipFile(zipped_filepath, 'w')
         zipped_file.write(patched_filepath, compress_type=compression)
         zipped_file.close()
 
         os.remove(patched_filepath)
 
+        return zipped_filepath
+
 
 class FakeSRTMTile(SRTMTile):
+    '''
+    This is just a fake tile for data that's missing. It's sort of safe to
+    assume it's just water data and can be rendered as 0
+    '''
     def __init__(self):
         pass
 
