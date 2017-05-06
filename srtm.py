@@ -161,7 +161,7 @@ class SRTMManager:
         30may2010  GJ ORIGINAL VERSION
         """
         print "createFileListHTTP"
-        conn = httplib.HTTPConnection(self.server)
+        conn = httplib.HTTPSConnection(self.server)
         conn.request("GET", self.directory)
         r1 = conn.getresponse()
         if r1.status == 200:
@@ -310,8 +310,7 @@ class SRTMManager:
             finally:
                 ftp.close()
         else:
-            #Use HTTP
-            conn = httplib.HTTPConnection(self.server)
+            conn = httplib.HTTPSConnection(self.server)
             conn.set_debuglevel(0)
             filepath = "%s%s%s" % (self.directory, region, filename)
             print "filepath=%s" % filepath

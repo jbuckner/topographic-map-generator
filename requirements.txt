@@ -1,6 +1,6 @@
-numpy==1.6.2
-scipy==0.11.0
-matplotlib
-pil
-gpxpy
-lxml
+numpy==1.12.1
+scipy==0.19.0
+matplotlib==2.0.1
+Pillow==4.1.1
+gpxpy==1.1.2
+lxml==3.7.3
