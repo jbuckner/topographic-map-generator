@@ -1,5 +1,5 @@
 numpy==1.12.1
-scipy==0.19.0
+scipy==1.10.0
 matplotlib==2.0.1
 Pillow==8.1.1
 gpxpy==1.1.2
